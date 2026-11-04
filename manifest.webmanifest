@@ -1,0 +1,20 @@
+{
+  "name": "Haunted Hollow",
+  "short_name": "Haunted Hollow",
+  "description": "A Halloween and Christmas platformer with Pip, your best friend.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#07040d",
+  "theme_color": "#1a0b2e",
+  "lang": "en",
+  "categories": ["games", "kids", "entertainment"],
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

@@ -1,0 +1,28 @@
+HAUNTED HOLLOW ALS EIGENE APP
+=============================
+
+Dieser Ordner ist das komplette Spiel als App (Progressive Web App):
+- eigenes Kürbis-Icon auf dem Startbildschirm
+- startet im Vollbild und im Querformat, ohne Browserleiste
+- funktioniert nach dem ersten Start auch ohne Internet
+- holt sich Updates automatisch
+
+ONLINE STELLEN (kostenlos, ca. 1 Minute)
+1. https://app.netlify.com/drop im Browser öffnen
+2. Den ganzen Ordner "haunted-hollow-app" (oder die ZIP-Datei) in das Feld ziehen
+3. Netlify zeigt einen Link wie https://xyz.netlify.app – das ist eure App
+   Tipp: Mit einem kostenlosen Netlify-Konto bleibt die Seite dauerhaft und
+   man kann den Namen ändern (z. B. haunted-hollow.netlify.app).
+
+AUF DEM HANDY INSTALLIEREN
+- Android (Chrome): Link öffnen, auf INSTALL oben im Spiel tippen
+  (oder Menü ⋮ > "App installieren").
+- iPhone/iPad (Safari): Link öffnen, Teilen-Symbol > "Zum Home-Bildschirm".
+
+WICHTIG
+- Die Datei index.html muss mit den Ordnern "icons" und "fonts" zusammen
+  hochgeladen werden. Nicht von einer KI umbauen lassen (z. B. Base44),
+  sonst kann die Anmeldung kaputtgehen.
+- Spielstände und Accounts liegen auf dem jeweiligen Gerät.
+- Für ein Update einfach den neuen Ordner wieder bei Netlify hochladen
+  (bei Netlify unter "Deploys" auf dieselbe Seite ziehen).
