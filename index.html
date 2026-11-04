@@ -1042,6 +1042,8 @@ const LEVEL_NAMES = LEVELS.map(f => f().name);
 /* ---------------- STATE ---------------- */
 // who is playing: every account has its own save files and high score; the guest slot keeps the old shared keys
 const ACCT = {id:'', name:''};
+// switch: false = no login/accounts at all, the game starts straight away as guest. Set to true to bring the account system back.
+const ACCOUNTS_ENABLED = false;
 const acctKeyFor = (id, k) => id === 'guest' ? ({saves:'hh_saves_v1', hi:'hh_hi', prof:'hh_prof_guest_v1'})[k] : 'hh_u_' + id + '_' + k;
 const acctKey = k => acctKeyFor(ACCT.id, k);
 let hi = 0;
@@ -1415,7 +1417,7 @@ function enterAccount(name, id, admin, back){
   G.slot = 0; G.fileSel = 0; G.confirmDel = -1; G.paused = false; G.state = 'title'; G.timer = 0;
   applyAdminState();
   UI.acctOpen = false; acEl.classList.remove('open');
-  toast((back ? 'Welcome back, ' : 'Welcome, ') + name + '!');
+  if (ACCOUNTS_ENABLED) toast((back ? 'Welcome back, ' : 'Welcome, ') + name + '!');
 }
 function acctLogin(nameIn, pass){
   const name = String(nameIn || '').trim().replace(/\s+/g, ' '), id = acctId(name);
@@ -1450,6 +1452,7 @@ function acctCreate(nameIn, pass, pass2){
 }
 function acctGuest(){ enterAccount('Guest', 'guest', false); return {ok:true}; }
 function acctLogout(){
+  if (!ACCOUNTS_ENABLED) return;                              // guest only: there is nobody to log out
   sessClear();
   ACCT.id = ''; ACCT.name = ''; adminOK = false;
   saves = [null, null, null]; hi = 0; G.paused = false; G.state = 'title'; G.timer = 0;
@@ -1651,6 +1654,7 @@ function openBoard(){ if (canOpenPanel()) showPanel('board'); }
 function openWardrobe(){ if (canOpenPanel()) showPanel('wardrobe'); }
 function openMenu(){ if (canOpenPanel()) showPanel('menu'); }
 function openAcct(mode){
+  if (!ACCOUNTS_ENABLED) return;                              // guest only: the login/account window never opens
   releaseAll();
   const m = mode || (ACCT.id ? 'signed' : 'login');
   acSetMode(m); acWho.textContent = ACCT.name + (adminOK ? '  (admin)' : '');
@@ -1698,6 +1702,10 @@ document.getElementById('btnMenu').addEventListener('click', e => { audio.unlock
 document.getElementById('mnWard').addEventListener('click', () => showPanel('wardrobe'));
 document.getElementById('mnBoard').addEventListener('click', () => showPanel('board'));
 document.getElementById('mnAcct').addEventListener('click', () => openAcct('signed'));
+if (!ACCOUNTS_ENABLED){
+  document.getElementById('mnAcct').style.display = 'none';
+  document.getElementById('btnMenu').setAttribute('aria-label', 'Menu: dressing room, leaderboard');
+}
 document.getElementById('mnClose').addEventListener('click', () => closeAcct());
 document.getElementById('wClose').addEventListener('click', () => closeAcct());
 for (const c of [wvNowCanvas, wvCanvas]) if (c) c.addEventListener('click', () => { W.dir = -W.dir; audio.unlock(); audio.sfx('tick'); });
@@ -5065,7 +5073,7 @@ function drawFiles(){
   drawBg(1, G.frame*0.3);
   ctx.fillStyle = 'rgba(7,4,13,.45)'; ctx.fillRect(0, 0, VW, VH);
   bigTitle('Choose a save file', 70, 64);
-  if (ACCT.name) txt('Account: ' + ACCT.name + '  (change it in the MENU)', VW/2, 112, 8, '#cbb8e6', 'center');
+  if (ACCOUNTS_ENABLED && ACCT.name) txt('Account: ' + ACCT.name + '  (change it in the MENU)', VW/2, 112, 8, '#cbb8e6', 'center');
   for (let i = 0; i < 3; i++){
     const cx = FILE_X[i], sel = i === G.fileSel, sl = saves[i];
     panel(cx - 110, FILE_Y, 220, FILE_H, sel);
@@ -5408,7 +5416,7 @@ if (document.fonts && document.fonts.load){
 /* start: nobody is signed in yet, so the account window is open and the game is frozen behind it */
 acSetMode('login'); applyAdminState();
 try { acName.value = localStorage.getItem(LAST_KEY) || ''; } catch(e){}
-const sessState = sessRestore();                           // still signed in from last time?
+const sessState = ACCOUNTS_ENABLED ? sessRestore() : (acctGuest(), 'ok');   // still signed in from last time? (guest only: always the guest)
 if (sessState === 'expired') acMsg('You were signed out because you did not play for a month. Please log in again.', false);
 if (sessState !== 'ok') setTimeout(() => { try { (acName.value ? acPass : acName).focus(); } catch(e){} }, 300);
 setInterval(() => { if (G.state === 'play' && !G.paused) sessTouch(); }, 120000);
