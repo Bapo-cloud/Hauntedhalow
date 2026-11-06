@@ -1,6 +1,6 @@
 /* Haunted Hollow service worker: keeps the game on the device so it starts fast and plays offline.
    The game page itself is loaded fresh from the internet when possible, so updates arrive by themselves. */
-const VERSION = 'hh-app-v1';
+const VERSION = 'hh-app-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
   './fonts/creepster.woff2', './fonts/pressstart2p-latin.woff2', './fonts/pressstart2p-latin-ext.woff2'];
