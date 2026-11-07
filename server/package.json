@@ -1,0 +1,8 @@
+{
+  "name": "season-chaos-leaderboard",
+  "private": true,
+  "description": "Online leaderboard for Season Chaos",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
