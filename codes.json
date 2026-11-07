@@ -1,0 +1,6 @@
+{
+ "codes": {
+  "SEASONCHAOS": {"candy": 1000},
+  "LUCKYPIP": {"skill": "luck", "levels": 1, "items": ["hat:top"], "lives": 3, "until": "2026-12-31"}
+ }
+}
