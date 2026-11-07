@@ -266,12 +266,13 @@ body.champ .pad button.royal{display:flex}
         <button type="button" class="go" id="wClose">Back to the game</button>
       </div>
       <div class="only-board">
-        <p class="sub">Best score of every account on this device</p>
+        <p class="sub">Online: the best score of every player, all over the world</p>
         <div class="pz p1"><b>#1</b><span>Champion Crown: a totem that saves you, plus the Royal Nova attack. Only one player can own it.</span></div>
         <div class="pz p2"><b>#2</b><span>Prize: 100,000 candy</span></div>
         <div class="pz p3"><b>#3</b><span>Prize: 10,000 candy</span></div>
         <div id="bdList" class="bd"></div>
-        <div class="fine">Prizes need at least 1,000 points. Candy prizes are paid once per place. Guests can play but cannot win prizes.</div>
+        <div class="fine">Prizes need at least 1,000 points. Candy prizes are paid once per place. Every save file is its own player, with the name you gave it.</div>
+        <div class="fine" id="bdNet"></div>
         <button type="button" class="go" id="bdClose">Back to the game</button>
       </div>
       <div class="only-news">
@@ -1155,7 +1156,7 @@ function cleanLook(l){                                     // any junk in -> a l
 }
 const PROF = {wallet:0, owned:{}, eq:defaultLook(), dirty:false};
 const W = {tab:'hat', tryOn:{}, dir:1};
-const isChampion = () => !!ACCT.id && ACCT.id !== 'guest' && PRIZE.crown === ACCT.id;          // the Champion Crown belongs to the #1 account only
+const isChampion = () => !!ME() && PRIZE.crown === ME();          // the Champion Crown belongs to the #1 player (save file) only
 const owns = (slot, id) => id === 'teal' && slot === 'color' || (slot === 'hat' && id === 'champ' ? isChampion() : !!PROF.owned[slot + ':' + id]);
 function loadProf(){
   let raw = null;
@@ -1192,7 +1193,9 @@ function wearItem(slot, id){                               // owned items: wear 
 
 /* ---------------- SAVE FILES ---------------- */
 const HOF_KEY = 'hh_hof_v1';
-function blankSlot(name){ return {name, char:0, unlocked:0, cleared:0, order:'cal', score:0, lives:3, candy:0, powered:false, created:Date.now(), fresh:true, seen:{}}; }
+// every save file is one player on the online leaderboard: key = its secret, the server only ever sees / shows a hash of it
+const newKey = () => { const a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a, b => (b < 16 ? '0' : '') + b.toString(16)).join(''); };
+function blankSlot(name){ return {name, key:newKey(), char:0, unlocked:0, cleared:0, order:'cal', score:0, lives:3, candy:0, powered:false, created:Date.now(), fresh:true, seen:{}}; }
 /* Which levels are beaten and open. unlocked = how many levels in a row (from level 1) are beaten, cleared = a bit per
    beaten level on top of that (old save files: their worlds kept their progress when the order changed). A level is open
    when it is the first one, already beaten, or the level before it is beaten. */
@@ -1215,7 +1218,16 @@ let saves = [null, null, null], hof = [];
 function readSaves(id){
   try {
     const raw = JSON.parse(localStorage.getItem(acctKeyFor(id, 'saves')) || 'null');
-    if (Array.isArray(raw)) return [0,1,2].map(i => raw[i] && typeof raw[i].name === 'string' ? convertSlot(Object.assign(blankSlot(raw[i].name), {fresh:false, seen:{}, order:''}, raw[i], {char:0})) : null);
+    if (Array.isArray(raw)){
+      let added = false;
+      const list = [0,1,2].map(i => {
+        if (!raw[i] || typeof raw[i].name !== 'string') return null;
+        if (!/^[a-f0-9]{32}$/.test(raw[i].key || '')){ raw[i].key = newKey(); delete raw[i].pub; added = true; }   // older save files get their player key now
+        return convertSlot(Object.assign(blankSlot(raw[i].name), {fresh:false, seen:{}, order:''}, raw[i], {char:0}));
+      });
+      if (added) try { localStorage.setItem(acctKeyFor(id, 'saves'), JSON.stringify(list)); } catch(e){}
+      return list;
+    }
   } catch(e){}
   return [null, null, null];
 }
@@ -1229,7 +1241,7 @@ function loadAccountData(){
   const mine = hof.filter(r => (r.acct || 'Guest') === ACCT.name);
   if (mine.length) hi = Math.max(hi, mine[0].score);
   loadProf();
-  if (hi > 0) boardRecord(hi);
+  if (typeof netSoon === 'function') netSoon(500);              // fetch the online leaderboard
 }
 function persist(){ try { if (ACCT.id) localStorage.setItem(acctKey('saves'), JSON.stringify(saves)); localStorage.setItem(HOF_KEY, JSON.stringify(hof)); } catch(e){} if (typeof sessTouch === 'function') sessTouch(); if (typeof PROF !== 'undefined' && PROF.dirty) profSave(); }
 function addHof(score){
@@ -1348,8 +1360,12 @@ const NAME_RE = /^[A-Za-z0-9À-ÖØ-öø-ÿ][A-Za-z0-9À-ÖØ-öø-ÿ _.\-]{1,11
 const acctId = name => name.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const reservedId = id => id === 'guest' || id.indexOf(ADMIN_ID) >= 0 || id.indexOf('admin') >= 0 || id === 'root';
 const bad = err => ({ok:false, err});
-/* leaderboard: the best score of every account on this device (one row per account) */
-const BOARD_KEY = 'hh_board_v1';
+/* leaderboard: online, one row per save file (player). The ids are the public hashes of the save files' keys.
+   The list from the server is kept here as a copy, so it still shows without internet. */
+const BOARD_KEY = 'hh_board_v2';
+const slotPub = sl => !sl || !sl.key ? '' : (sl.pub || (sl.pub = toHex(sha256(utf8(sl.key))).slice(0, 16)));
+const ME = () => slotPub(saves[G.slot]);                        // the player of the save file that is open
+const MY_IDS = () => saves.filter(Boolean).map(slotPub);        // every player on this device
 let board = [];
 function boardLoad(){
   board = [];
@@ -1367,15 +1383,62 @@ function boardPut(id, acct, score, skin){
   return true;
 }
 function boardSkin(){                                      // the leaderboard shows how each player looks: keep it up to date
-  const e = board.find(x => x.id === ACCT.id); if (!e) return;
+  const sl = saves[G.slot], e = board.find(x => x.id === ME()); if (!e || !sl) return;
   const now = cleanLook(PROF.eq);
-  if (JSON.stringify(e.skin) !== JSON.stringify(now)){ e.skin = now; boardSave(); }
+  if (JSON.stringify(e.skin) !== JSON.stringify(now)){ e.skin = now; boardSave(); netQueue(sl, e.score); }
 }
-function boardRecord(score){ if (!ACCT.id) return; if (boardPut(ACCT.id, ACCT.name, Math.floor(score), PROF.eq)){ boardSave(); prizeReconcile(); } else boardSkin(); }
-const ranked = () => board.filter(e => e.id !== 'guest');            // places count accounts only
-function boardRank(){ const i = ranked().findIndex(e => e.id === ACCT.id); return i < 0 ? 0 : i + 1; }
-// scores that were set before the leaderboard existed (old hall of fame) join it once
-{ let changed = false; for (const r of hof) changed = boardPut(acctId(r.acct || 'guest'), r.acct || 'Guest', r.score, null) || changed; if (changed) boardSave(); }
+function boardRecord(score){
+  const sl = saves[G.slot], id = ME(); if (!id) return;
+  score = Math.floor(score);
+  if (boardPut(id, sl.name, score, PROF.eq)){ boardSave(); prizeReconcile(); netQueue(sl, score); } else boardSkin();
+}
+const ranked = () => board;
+function boardRank(){ const i = board.findIndex(e => e.id === ME()); return i < 0 ? 0 : i + 1; }
+
+/* the online part: scores wait in an outbox (also across restarts) until the server has them */
+const BOARD_URL = 'https://season-chaos-leaderboard.onrender.com', OUT_KEY = 'hh_board_out_v1';
+const NET = {out:{}, busy:false, ok:false, tried:false, timer:0};
+try { const o = JSON.parse(localStorage.getItem(OUT_KEY) || '{}'); if (o && typeof o === 'object') NET.out = o; } catch(e){}
+const netKeep = () => { try { localStorage.setItem(OUT_KEY, JSON.stringify(NET.out)); } catch(e){} };
+function netQueue(sl, score){
+  const id = slotPub(sl); if (!id || !(score > 0)) return;
+  const o = NET.out[id];
+  NET.out[id] = {key:sl.key, name:sl.name, score:Math.max(score, o ? o.score : 0), skin:cleanLook(PROF.eq)};
+  netKeep(); netSoon(4000);
+}
+function netSoon(ms){ clearTimeout(NET.timer); NET.timer = setTimeout(netSync, ms || 0); }
+async function netSync(){
+  if (NET.busy) return; NET.busy = true;
+  try {
+    let got = false;
+    for (const [id, o] of Object.entries(NET.out)){
+      const r = await fetch(BOARD_URL + '/score', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(o)});
+      if (!r.ok && r.status !== 400) throw new Error('score ' + r.status);
+      if (NET.out[id] === o){ delete NET.out[id]; netKeep(); }          // 400: the server will never take it (bad name), so drop it
+      if (r.ok){ netApply(await r.json()); got = true; }
+    }
+    if (!got){ const r = await fetch(BOARD_URL + '/top', {cache:'no-store'}); if (!r.ok) throw new Error('top ' + r.status); netApply(await r.json()); }
+    NET.ok = true;
+  } catch(e){ NET.ok = false; netSoon(60000); }                         // no internet or the server is waking up: try again later
+  finally { NET.busy = false; NET.tried = true; netStatus(); }
+}
+function netApply(j){
+  if (!j || !Array.isArray(j.players)) return;
+  const fresh = j.players.filter(p => p && /^[a-f0-9]{16}$/.test(p.id)).map(p => ({id:p.id, acct:String(p.name || '').slice(0, 10), score:Math.floor(Number(p.score)) || 0, skin:cleanLook(p.skin), t:Number(p.t) || 0}));
+  for (const [id, o] of Object.entries(NET.out)){                      // own scores that are not sent yet stay on the list
+    const e = fresh.find(x => x.id === id);
+    if (e){ if (o.score > e.score) e.score = o.score; } else fresh.push({id, acct:o.name, score:o.score, skin:cleanLook(o.skin), t:Date.now()});
+  }
+  board = fresh.sort((a, b) => b.score - a.score).slice(0, 100);
+  boardSave(); prizeReconcile();
+  if (UI.acctOpen && UI.mode === 'board') renderBoard();
+}
+function netStatus(){
+  const el = document.getElementById('bdNet'); if (!el) return;
+  el.textContent = NET.ok ? 'Online leaderboard: up to date.' : NET.tried ? 'No connection right now. Your scores are sent as soon as the game is online again.' : 'Loading the online leaderboard...';
+}
+setInterval(() => { if (document.visibilityState === 'visible') netSoon(0); }, 5 * 60000);   // refresh every few minutes while playing
+addEventListener('online', () => netSoon(0));
 
 /* ---------------- LEADERBOARD PRIZES ----------------
    #1 owns the Champion Crown. There is only one: it moves to whoever takes first place and the old owner loses it.
@@ -1400,7 +1463,7 @@ function prizeSave(){ try { localStorage.setItem(PRIZE_KEY, JSON.stringify({crow
 prizeLoad();
 const podium = () => ranked().slice(0, 3).filter(e => e.score >= PRIZE_MIN);
 const holderName = () => { const e = PRIZE.crown && board.find(x => x.id === PRIZE.crown); return e ? e.acct : ''; };
-function addNews(id, m){ const l = PRIZE.news[id] || (PRIZE.news[id] = []); l.push(m); if (l.length > 12) l.shift(); }
+function addNews(id, m){ if (!MY_IDS().includes(id)) return; const l = PRIZE.news[id] || (PRIZE.news[id] = []); l.push(m); if (l.length > 12) l.shift(); }
 function prizeReconcile(){                                           // run whenever the board changed: moves the crown, books the candy prizes
   const top = podium(), champ = top[0] ? top[0].id : '';
   let changed = false;
@@ -1411,7 +1474,7 @@ function prizeReconcile(){                                           // run when
     PRIZE.crown = champ; PRIZE.since = champ ? Date.now() : 0; changed = true;
   }
   for (const place of [2, 3]){
-    const e = top[place - 1]; if (!e) continue;
+    const e = top[place - 1]; if (!e || !MY_IDS().includes(e.id)) continue;     // this device books the prizes of its own players only
     const paid = PRIZE.paid[e.id] || (PRIZE.paid[e.id] = {2:false, 3:false});
     if (paid[place]) continue;
     paid[place] = true; PRIZE.owed[e.id] = (PRIZE.owed[e.id] || 0) + PRIZE_CANDY[place];
@@ -1421,16 +1484,17 @@ function prizeReconcile(){                                           // run when
   claimMine();
   return changed;
 }
-function claimMine(){                                                // pays the signed-in account and keeps its look honest
-  if (!ACCT.id || ACCT.id === 'guest') return;
-  const owe = PRIZE.owed[ACCT.id] || 0;
-  if (owe > 0){ delete PRIZE.owed[ACCT.id]; earn(owe); prizeSave(); profSave(); }
+function claimMine(){                                                // pays this device's players and keeps the look honest
+  if (!ACCT.id) return;
+  let owe = 0;
+  for (const id of MY_IDS()) if (PRIZE.owed[id]){ owe += PRIZE.owed[id]; delete PRIZE.owed[id]; }
+  if (owe > 0){ earn(owe); prizeSave(); profSave(); }
   if (isChampion()){
-    if ((PRIZE.news[ACCT.id] || []).some(m => m.t === 'crown') && PROF.eq.hat !== 'champ'){ PROF.eq.hat = 'champ'; profSave(); }   // a new champion puts the crown on
-  } else if (PROF.eq.hat === 'champ'){ PROF.eq.hat = ''; profSave(); }                                                                // the old champion loses it
+    if ((PRIZE.news[ME()] || []).some(m => m.t === 'crown') && PROF.eq.hat !== 'champ'){ PROF.eq.hat = 'champ'; profSave(); }   // a new champion puts the crown on
+  } else if (PROF.eq.hat === 'champ'){ PROF.eq.hat = ''; profSave(); }                                                            // the old champion loses it
 }
-const pendingNews = () => !!ACCT.id && (PRIZE.news[ACCT.id] || []).length > 0;
-function takeNews(){ const l = PRIZE.news[ACCT.id] || []; delete PRIZE.news[ACCT.id]; prizeSave(); return l; }
+const pendingNews = () => MY_IDS().some(id => (PRIZE.news[id] || []).length > 0);
+function takeNews(){ let l = []; for (const id of MY_IDS()){ l = l.concat(PRIZE.news[id] || []); delete PRIZE.news[id]; } prizeSave(); return l; }
 function newsText(m){
   if (m.t === 'crown') return {good:true, text:'You are #1 on the leaderboard! The Champion Crown is yours. It is a totem that saves you once per level, and you can unleash the Royal Nova with ' + hint('R', 'Y', 'the crown button') + '.'};
   if (m.t === 'lost') return {good:false, text:m.by + ' took first place and the Champion Crown. Beat their score to win it back!'};
@@ -1603,7 +1667,7 @@ function acSetMode(m){
   acMsg('');
 }
 function boardLook(e){                                      // what a row looks like: only the champion wears the crown
-  const l = cleanLook(e.id === ACCT.id ? PROF.eq : e.skin);
+  const l = cleanLook(e.id === ME() ? PROF.eq : e.skin);
   if (PRIZE.crown === e.id) l.hat = 'champ'; else if (l.hat === 'champ') l.hat = '';
   return l;
 }
@@ -1611,11 +1675,12 @@ function renderBoard(){
   const box = document.getElementById('bdList');
   if (!box || typeof document.createElement !== 'function') return;
   box.textContent = '';
+  netStatus();
   if (!board.length){ const d = document.createElement('div'); d.className = 'bdempty'; d.textContent = 'No scores yet. Be the first!'; box.appendChild(d); return; }
-  let place = 0; const rows = board.map(e => ({e, rank:e.id === 'guest' ? 0 : ++place}));
+  const rows = board.map((e, i) => ({e, rank:i + 1})), me = ME(), mine = MY_IDS();
   const mk = ({e, rank}) => {
     const row = document.createElement('div'), rk = document.createElement('span'), av = document.createElement('span'), nm = document.createElement('span'), sc = document.createElement('span');
-    row.className = 'bdrow' + (e.id === ACCT.id ? ' me' : '') + (rank && rank < 4 ? ' r' + rank : '') + (rank ? '' : ' guest');
+    row.className = 'bdrow' + (e.id === me || (!me && mine.includes(e.id)) ? ' me' : '') + (rank < 4 ? ' r' + rank : '');
     rk.className = 'rk'; rk.textContent = rank ? '#' + rank : '--'; nm.className = 'nm'; nm.textContent = e.acct; av.className = 'av';
     if (PRIZE.crown === e.id){ const ch = document.createElement('span'); ch.className = 'ch'; ch.textContent = 'CROWN'; nm.appendChild(ch); }
     const url = renderAvatar(boardLook(e));                                   // the skin that player wears
@@ -1624,8 +1689,8 @@ function renderBoard(){
     row.appendChild(rk); row.appendChild(av); row.appendChild(nm); row.appendChild(sc); box.appendChild(row);
   };
   rows.slice(0, 10).forEach(mk);
-  const me = rows.findIndex(r => r.e.id === ACCT.id);
-  if (me >= 10){ const g = document.createElement('div'); g.className = 'bdgap'; g.textContent = '...'; box.appendChild(g); mk(rows[me]); }
+  const at = rows.findIndex(r => r.e.id === me);
+  if (at >= 10){ const g = document.createElement('div'); g.className = 'bdgap'; g.textContent = '...'; box.appendChild(g); mk(rows[at]); }
 }
 /* the dressing room: pick a tab, tap an item to try it on, buy it with candy, wear it or take it off */
 const SLOT_WORD = {hat:'Hat', face:'Face', back:'Back', neck:'Medal', color:'Coat'};
@@ -1717,7 +1782,7 @@ const PANEL_STATES = ['title', 'files', 'map', 'gameover', 'win', 'medal', 'xmas
 const wvCanvas = document.getElementById('wvPrev'), wvNowCanvas = document.getElementById('wvNow');
 function showPanel(m){
   releaseAll();
-  if (m === 'board') renderBoard();
+  if (m === 'board'){ renderBoard(); netSoon(0); }              // show the saved list at once, then fetch the newest one
   if (m === 'news') renderNews(NEWS.list);
   if (m === 'wardrobe'){ W.tryOn = {}; acMsg(''); renderWardrobe(); }
   acSetMode(m);
@@ -6345,8 +6410,8 @@ function drawTitle(){
   if ((G.frame >> 5) % 2 === 0) txt(hint('Press Enter to start', 'Press A to start', 'Tap to start'), VW/2, 262, 14, '#fff', 'center');
   txt(hint('Move: arrows / A D    Jump: Space / W    Spin or magic: X / J', 'Move: stick / D-pad    Jump: A    Spin or magic: B or X', 'Buttons appear in the level. Star = spin attack or magic'), VW/2, 300, 9, '#cbb8e6', 'center');
   txt(hint('Pause: P    Sound: M    Dressing room: C    Top scores: L', 'Pause: Start    Quit level: Select    Top scores: RB', 'Pause, sound, dressing room, top scores: MENU button'), VW/2, 318, 9, '#cbb8e6', 'center');
-  if (ACCT.name) txt('Player: ' + ACCT.name + (adminOK ? '  (admin)' : ''), 16, 18, 8, '#cbb8e6');
-  if (board.length){ drawMini(VW/2 - 136, 506, board[0].id === ACCT.id ? PROF.eq : board[0].skin, 0.55); txt('Best: ' + board[0].acct + '  ' + String(board[0].score).padStart(7, '0'), VW/2 + 10, 490, 10, '#ffb21f', 'center'); }
+  if (ACCOUNTS_ENABLED && ACCT.name) txt('Player: ' + ACCT.name + (adminOK ? '  (admin)' : ''), 16, 18, 8, '#cbb8e6');
+  if (board.length){ drawMini(VW/2 - 136, 506, MY_IDS().includes(board[0].id) ? PROF.eq : board[0].skin, 0.55); txt('Best: ' + board[0].acct + '  ' + String(board[0].score).padStart(7, '0'), VW/2 + 10, 490, 10, '#ffb21f', 'center'); }
   drawVignette();
 }
 
@@ -6400,8 +6465,8 @@ function drawFiles(){
   bigTitle('Leaderboard', 400, 34);
   if (!board.length) txt('No scores yet. Be the first!', VW/2, 428, 9, '#cbb8e6', 'center');
   board.slice(0, 5).forEach((r, k) => {
-    const y = 424 + k*16, col = r.id === ACCT.id ? '#7cf06b' : k === 0 ? '#ffcf4a' : '#e9dcff';
-    drawMini(VW/2 - 200, y + 12, r.id === ACCT.id ? PROF.eq : r.skin, 0.4);
+    const y = 424 + k*16, mine = MY_IDS().includes(r.id), col = mine ? '#7cf06b' : k === 0 ? '#ffcf4a' : '#e9dcff';
+    drawMini(VW/2 - 200, y + 12, mine ? PROF.eq : r.skin, 0.4);
     txt((k + 1) + '. ' + r.acct, VW/2 - 180, y, 9, col);
     txt(String(r.score).padStart(7, '0'), VW/2 + 190, y, 9, col, 'right');
   });
@@ -6611,7 +6676,7 @@ function drawEnd(title, sub, noPrompt){
   txt(sub, VW/2, 260, 12, '#e9dcff', 'center');
   txt('Score ' + String(G.score).padStart(7, '0'), VW/2, 310, 14, '#fff', 'center');
   txt('High score ' + String(hi).padStart(7, '0'), VW/2, 340, 10, '#ffb21f', 'center');
-  const rk = boardRank(); if (rk) txt('Leaderboard: #' + rk + ' of ' + ranked().length + '  (' + ACCT.name + ')', VW/2, 368, 9, '#cbb8e6', 'center');
+  const rk = boardRank(); if (rk) txt('Leaderboard: #' + rk + ' of ' + ranked().length + '  (' + (saves[G.slot] ? saves[G.slot].name : '') + ')', VW/2, 368, 9, '#cbb8e6', 'center');
   if (isChampion()) txt('You hold the Champion Crown!', VW/2, 386, 9, '#ffd24a', 'center');
   if (!noPrompt && G.timer > 60 && (G.frame >> 5) % 2 === 0) txt(hint('Press Enter to continue', 'Press A to continue', 'Tap to continue'), VW/2, 410, 12, '#fff', 'center');
 }
