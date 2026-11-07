@@ -154,6 +154,19 @@ body:not(.isadmin) #admin{display:none!important}
 .pad button.royal{display:none;align-items:center;justify-content:center;border-color:#ffd24a;color:#ffd24a;box-shadow:0 0 14px rgba(255,210,74,.55)}
 body.champ .pad button.royal{display:flex}
 .pad button.royal.cool{opacity:.4;box-shadow:none}
+#acct .only-skills{display:none}
+#acct[data-mode=skills] .only-skills{display:block}
+#acct[data-mode=skills] .not-signed{display:none}
+#acct .sk{display:grid;grid-template-columns:34px 1fr auto;gap:4px 10px;align-items:center;padding:8px;border-radius:7px;margin:6px 0;background:rgba(255,255,255,.05)}
+#acct .sk .ic{font:22px/1 system-ui,sans-serif;grid-row:span 2;text-align:center}
+#acct .sk .nm{font-size:9px;color:#ffcf4a}
+#acct .sk .ds{font-size:7px;line-height:1.6;color:#cbb8e6;grid-column:2}
+#acct .sk .lv{display:flex;gap:3px;margin-top:4px}
+#acct .sk .lv i{width:14px;height:6px;border-radius:2px;background:rgba(255,255,255,.15)}
+#acct .sk .lv i.on{background:#7cf06b}
+#acct .sk button{grid-row:span 2;font:inherit;font-size:8px;line-height:1.5;border-radius:6px;padding:8px 9px;cursor:pointer;border:0;color:#1a0a00;background:#7cf06b;min-width:84px}
+#acct .sk button:disabled{background:rgba(255,255,255,.12);color:#9d8ab8;cursor:default}
+#acct .sk button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 #acct .only-news{display:none}
 #acct[data-mode=news] .only-news{display:block}
 #acct[data-mode=news] .not-signed{display:none}
@@ -249,6 +262,7 @@ body.champ .pad button.royal{display:flex}
         <p class="sub">The game is paused</p>
         <div class="wbal" id="mnBank"></div>
         <button type="button" class="go" id="mnWard">Dressing room</button>
+        <button type="button" class="alt" id="mnSkills">Skills</button>
         <button type="button" class="alt" id="mnBoard">Leaderboard</button>
         <button type="button" class="alt" id="mnAcct">Account</button>
         <button type="button" class="alt" id="mnClose">Back to the game</button>
@@ -264,6 +278,14 @@ body.champ .pad button.royal{display:flex}
         <div class="wtabs" id="wTabs" role="tablist"></div>
         <div class="wlist" id="wList"></div>
         <button type="button" class="go" id="wClose">Back to the game</button>
+      </div>
+      <div class="only-skills">
+        <p class="sub">Lasting upgrades for Pip, paid with candy from your candy bank</p>
+        <div class="wbal">Candy bank: <span id="skBal">0</span></div>
+        <div id="skList"></div>
+        <div class="fine" id="skMsg" role="status" aria-live="polite"></div>
+        <div class="fine">Every skill has 5 levels: 1,000 / 2,500 / 5,000 / 10,000 / 20,000 candy. Skills belong to the candy bank, so every save file on this device has them.</div>
+        <button type="button" class="go" id="skClose">Back to the game</button>
       </div>
       <div class="only-board">
         <p class="sub">Online: the best score of every player, all over the world</p>
@@ -356,7 +378,7 @@ document.body.classList.toggle('touch', inputMode === 'touch');
 const hint = (kb, pad, touch) => inputMode === 'gamepad' ? pad : inputMode === 'touch' ? touch : kb;
 
 const KEYMAP = {ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right',ArrowUp:'jump',KeyW:'jump',Space:'jump',KeyZ:'jump',
-  Digit1:'o1',Digit2:'o2',Digit3:'o3',Numpad1:'o1',Numpad2:'o2',Numpad3:'o3',KeyX:'fire',KeyJ:'fire',KeyK:'fire',ShiftLeft:'fire',ShiftRight:'fire',Enter:'start',KeyP:'pause',Escape:'pause',KeyM:'mute',KeyC:'hero',KeyE:'hero',KeyQ:'quit',Delete:'del',Backspace:'del',ArrowDown:'down',KeyS:'down',KeyH:'check',KeyL:'board',KeyR:'royal',KeyF:'royal'};
+  Digit1:'o1',Digit2:'o2',Digit3:'o3',Numpad1:'o1',Numpad2:'o2',Numpad3:'o3',KeyX:'fire',KeyJ:'fire',KeyK:'fire',ShiftLeft:'fire',ShiftRight:'fire',Enter:'start',KeyP:'pause',Escape:'pause',KeyM:'mute',KeyC:'hero',KeyE:'hero',KeyQ:'quit',Delete:'del',Backspace:'del',ArrowDown:'down',KeyS:'down',KeyH:'check',KeyL:'board',KeyU:'skills',KeyR:'royal',KeyF:'royal'};
 window.addEventListener('keydown', e => {
   if (UI.acctOpen){                                  // a window is open: the game ignores the keys, only Esc closes it
     if (e.key === 'Escape' && ACCT.id && !isTyping(e.target)){ e.preventDefault(); closeAcct(); }
@@ -1154,16 +1176,17 @@ function cleanLook(l){                                     // any junk in -> a l
   for (const sl of SLOTS){ const id = typeof l[sl.id] === 'string' ? l[sl.id] : ''; if (shopItem(sl.id, id)) out[sl.id] = id; }
   return out;
 }
-const PROF = {wallet:0, owned:{}, eq:defaultLook(), dirty:false};
+const PROF = {wallet:0, owned:{}, eq:defaultLook(), skills:{}, dirty:false};
 const W = {tab:'hat', tryOn:{}, dir:1};
 const isChampion = () => !!ME() && PRIZE.crown === ME();          // the Champion Crown belongs to the #1 player (save file) only
 const owns = (slot, id) => id === 'teal' && slot === 'color' || (slot === 'hat' && id === 'champ' ? isChampion() : !!PROF.owned[slot + ':' + id]);
 function loadProf(){
   let raw = null;
   try { raw = JSON.parse(localStorage.getItem(acctKey('prof')) || 'null'); } catch(e){}
-  PROF.wallet = 0; PROF.owned = {}; PROF.eq = defaultLook(); PROF.dirty = false; W.tryOn = {};
+  PROF.wallet = 0; PROF.owned = {}; PROF.eq = defaultLook(); PROF.skills = {}; PROF.dirty = false; W.tryOn = {};
   if (!raw || typeof raw !== 'object') return;
   PROF.wallet = Math.max(0, Math.min(99999999, Math.floor(Number(raw.wallet)) || 0));
+  if (raw.skills && typeof raw.skills === 'object') for (const s of SKILLS){ const l = Math.floor(Number(raw.skills[s.id])) || 0; if (l > 0) PROF.skills[s.id] = Math.min(l, SKILL_PRICE.length); }
   if (Array.isArray(raw.owned)) for (const k of raw.owned) if (typeof k === 'string'){ const [sl, id] = k.split(':'); if (shopItem(sl, id)) PROF.owned[k] = true; }
   const eq = cleanLook(raw.eq);
   for (const sl of SLOTS) if (eq[sl.id] && !owns(sl.id, eq[sl.id])) eq[sl.id] = sl.id === 'color' ? 'teal' : '';
@@ -1172,10 +1195,33 @@ function loadProf(){
 function profSave(){
   PROF.dirty = false;
   if (!ACCT.id) return;
-  try { localStorage.setItem(acctKey('prof'), JSON.stringify({wallet:PROF.wallet, owned:Object.keys(PROF.owned), eq:PROF.eq})); } catch(e){}
+  try { localStorage.setItem(acctKey('prof'), JSON.stringify({wallet:PROF.wallet, owned:Object.keys(PROF.owned), eq:PROF.eq, skills:PROF.skills})); } catch(e){}
   boardSkin();
 }
 function earn(n){ if (ACCT.id){ PROF.wallet += n; PROF.dirty = true; } }
+
+/* ---------------- SKILLS: lasting upgrades, bought with lots of candy from the candy bank ----------------
+   5 levels each. They belong to the candy bank, so every save file on this device has them. */
+const SKILL_PRICE = [1000, 2500, 5000, 10000, 20000];
+const magnetRange = l => 40 + 25*l;                                  // pixels: level 5 = 165 (the Candy Magnet power-up reaches 220)
+const SKILLS = [
+  {id:'jump',   name:'Jump Power',   icon:'⬆️', desc:l => 'Pip jumps ' + (l*3) + '% higher.'},
+  {id:'lives',  name:'Extra Lives',  icon:'❤️', desc:l => '+' + l + (l === 1 ? ' life' : ' lives') + ' at the start of a game and when you buy new lives.'},
+  {id:'time',   name:'More Time',    icon:'⏱️', desc:l => '+' + (l*20) + ' seconds in every level.'},
+  {id:'magnet', name:'Candy Magnet', icon:'🧲', desc:l => 'Candy up to ' + Math.round(magnetRange(l)/T*10)/10 + ' blocks away flies to Pip, all the time.'},
+  {id:'luck',   name:'Luck',         icon:'🍀', desc:l => '? blocks hold a power-up ' + (l*6) + '% more often, and extra lives show up more.'}
+];
+const skill = id => PROF.skills[id] || 0;
+const jumpMul = () => 1 + 0.03*skill('jump');
+const startLives = () => HERO.lives + skill('lives');
+const levelTime = () => HERO.time + 20*skill('time');
+function buySkill(id){                                               // -> 'ok', 'max' or 'poor'
+  const s = SKILLS.find(k => k.id === id), l = skill(id);
+  if (!s || l >= SKILL_PRICE.length) return 'max';
+  if (PROF.wallet < SKILL_PRICE[l]) return 'poor';
+  PROF.wallet -= SKILL_PRICE[l]; PROF.skills[id] = l + 1; profSave();
+  return 'ok';
+}
 function buyItem(slot, id){                                // -> {ok, msg}
   const it = shopItem(slot, id); if (!it) return {ok:false, msg:'Unknown item.'};
   if (it.special) return {ok:false, msg:'Only the #1 player can wear the Champion Crown.'};
@@ -1660,7 +1706,7 @@ const acTabIn = document.getElementById('acTabIn'), acTabNew = document.getEleme
 function acMsg(t, ok){ acMsgEl.textContent = t || ''; acMsgEl.classList.toggle('ok', !!ok); }
 function acSetMode(m){
   acEl.dataset.mode = m; UI.mode = m;
-  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Season Chaos';
+  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', skills:'Skills', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Season Chaos';
   acTabIn.setAttribute('aria-selected', String(m === 'login')); acTabNew.setAttribute('aria-selected', String(m === 'create'));
   acGo.textContent = m === 'create' ? 'Create account' : 'Log in';
   acPass.setAttribute('autocomplete', m === 'create' ? 'new-password' : 'current-password');
@@ -1783,18 +1829,47 @@ const wvCanvas = document.getElementById('wvPrev'), wvNowCanvas = document.getEl
 function showPanel(m){
   releaseAll();
   if (m === 'board'){ renderBoard(); netSoon(0); }              // show the saved list at once, then fetch the newest one
+  if (m === 'skills'){ document.getElementById('skMsg').textContent = ''; renderSkills(); }
   if (m === 'news') renderNews(NEWS.list);
   if (m === 'wardrobe'){ W.tryOn = {}; acMsg(''); renderWardrobe(); }
   acSetMode(m);
   if (m === 'menu') document.getElementById('mnBank').textContent = 'Candy bank: ' + PROF.wallet;
   UI.acctOpen = true; acEl.classList.add('open');
   if (G.state === 'play') G.paused = true;                    // a menu opens -> the game pauses
-  const f = {board:'bdClose', wardrobe:'wClose', menu:'mnWard', news:'nwClose'}[m];
+  const f = {board:'bdClose', wardrobe:'wClose', skills:'skClose', menu:'mnWard', news:'nwClose'}[m];
   setTimeout(() => { try { document.getElementById(f).focus(); } catch(e){} }, 30);
 }
 const canOpenPanel = () => !!ACCT.id && !UI.acctOpen && PANEL_STATES.includes(G.state);
 function openBoard(){ if (canOpenPanel()) showPanel('board'); }
 function openWardrobe(){ if (canOpenPanel()) showPanel('wardrobe'); }
+function openSkills(){ if (canOpenPanel()) showPanel('skills'); }
+function renderSkills(){
+  const box = document.getElementById('skList'); if (!box || typeof document.createElement !== 'function') return;
+  document.getElementById('skBal').textContent = fmtN(PROF.wallet);
+  box.textContent = '';
+  for (const s of SKILLS){
+    const l = skill(s.id), max = l >= SKILL_PRICE.length, price = max ? 0 : SKILL_PRICE[l];
+    const row = document.createElement('div'); row.className = 'sk';
+    const ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = s.icon; ic.setAttribute('aria-hidden', 'true');
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.name + '  ' + l + '/' + SKILL_PRICE.length;
+    const lv = document.createElement('div'); lv.className = 'lv';
+    for (let k = 0; k < SKILL_PRICE.length; k++){ const i = document.createElement('i'); if (k < l) i.className = 'on'; lv.appendChild(i); }
+    nm.appendChild(lv);
+    const bt = document.createElement('button'); bt.type = 'button';
+    bt.textContent = max ? 'MAX' : fmtN(price) + ' candy';
+    bt.disabled = max || PROF.wallet < price;
+    bt.setAttribute('aria-label', max ? s.name + ': highest level reached' : 'Buy ' + s.name + ' level ' + (l + 1) + ' for ' + fmtN(price) + ' candy');
+    bt.addEventListener('click', () => {
+      const r = buySkill(s.id), msg = document.getElementById('skMsg');
+      if (r === 'ok'){ audio.sfx('oneup'); msg.textContent = s.name + ' is now level ' + skill(s.id) + '!'; }
+      else { audio.sfx('hurt'); msg.textContent = r === 'max' ? s.name + ' is already at the highest level.' : 'Not enough candy yet.'; }
+      renderSkills(); try { box.querySelectorAll('button')[SKILLS.indexOf(s)].focus(); } catch(e){}
+    });
+    const ds = document.createElement('div'); ds.className = 'ds';
+    ds.textContent = l ? 'Now: ' + s.desc(l) + (max ? '' : '  Next: ' + s.desc(l + 1)) : 'Level 1: ' + s.desc(1);
+    row.appendChild(ic); row.appendChild(nm); row.appendChild(bt); row.appendChild(ds); box.appendChild(row);
+  }
+}
 function openMenu(){ if (canOpenPanel()) showPanel('menu'); }
 function openAcct(mode){
   if (!ACCOUNTS_ENABLED) return;                              // guest only: the login/account window never opens
@@ -1844,6 +1919,8 @@ document.getElementById('nwClose').addEventListener('click', () => closeAcct());
 document.getElementById('btnMenu').addEventListener('click', e => { audio.unlock(); e.currentTarget.blur(); if (UI.acctOpen) closeAcct(); else openMenu(); });
 document.getElementById('mnWard').addEventListener('click', () => showPanel('wardrobe'));
 document.getElementById('mnBoard').addEventListener('click', () => showPanel('board'));
+document.getElementById('mnSkills').addEventListener('click', () => showPanel('skills'));
+document.getElementById('skClose').addEventListener('click', () => closeAcct());
 document.getElementById('mnAcct').addEventListener('click', () => openAcct('signed'));
 if (!ACCOUNTS_ENABLED){
   document.getElementById('mnAcct').style.display = 'none';
@@ -1918,7 +1995,7 @@ function stepName(){
 const MAP_X = [140, 370, 600, 830], MAP_Y = [340, 260, 340, 250];
 function startFromMap(){
   const sl = saves[G.slot];
-  if (sl.fresh){ sl.lives = HERO.lives; sl.fresh = false; persist(); }
+  if (sl.fresh){ sl.lives = startLives(); sl.fresh = false; persist(); }
   loadFromSlot(); lvl = null;
   sl.seen = sl.seen || {};
   const lv = G.mapSel, w = lv >> 2, key = WORLD_STORY[w].key;   // each world's story is told once per save file
@@ -1944,6 +2021,7 @@ function stepMap(){
   let go = false;
   if (pressed.tap){
     const t = pressed.tap;
+    if (t.y > VH - 122 && t.y < VH - 70 && t.x > VW - 250){ openSkills(); return; }
     if (t.y > VH - 70 && t.x > VW - 250){ openWardrobe(); return; }
     if (t.y > VH - 70 && t.x < 250){ G.state = 'files'; G.timer = 0; return; }
     const wb = (G.mapSel >> 2) * 4, nx = worldStep(sl, wb, 1), pv = worldStep(sl, wb, -1);
@@ -2390,7 +2468,7 @@ function startLevel(i, respawn){
   G.talk = null;
   lvl.talks = buildTalks();
   cam.x = clamp(P.x - VW*0.42, 0, lvl.w*T - VW);
-  G.time = HERO.time; G.hurried = false; G.paused = false; G.introLen = respawn ? 140 : 540;
+  G.time = levelTime(); G.hurried = false; G.paused = false; G.introLen = respawn ? 140 : 540;
   G.state = 'intro'; G.timer = 0;
 }
 
@@ -2453,8 +2531,9 @@ function rollItem(noLife){
   const w = {}; for (const k of powersHere()) w[k] = ITEM_POOL[k];
   if (G.shield) w.shield *= 0.25;
   for (const k of TIMED_POWERS) if (G.fx && G.fx[k] > 0 && w[k]) w[k] *= 0.25;
-  if (G.time < 100) w.time *= 3; else if (G.time > HERO.time * 0.8) w.time *= 0.5;
+  if (G.time < 100) w.time *= 3; else if (G.time > levelTime() * 0.8) w.time *= 0.5;
   if (G.lives <= 1) w.life *= 2.5; else if (G.lives >= 6) w.life *= 0.4;
+  if (w.life) w.life *= 1 + 0.15*skill('luck');                     // Luck skill: extra lives a little more often
   if (G.lastItem && w[G.lastItem]) w[G.lastItem] *= 0.3;
   if (noLife) w.life = 0;
   let sum = 0; for (const k in w) sum += w[k];
@@ -2478,7 +2557,7 @@ function bumpBlock(tx, ty){
   let bumped = false;
   if (v === 3){
     lvl.t[ty][tx] = 5;
-    if (Math.random() < MYSTERY_ITEM_CHANCE) spawnPowerItem(tx, ty, rollItem(true));
+    if (Math.random() < MYSTERY_ITEM_CHANCE + 0.06*skill('luck')) spawnPowerItem(tx, ty, rollItem(true));
     else { items.push({type:'pop', x:tx*T+8, y:ty*T-20, vy:-7, life:24, ci:Math.floor(Math.random()*5)}); addCandy(tx*T+16, ty*T); }
     bumped = true;
   }
@@ -2656,7 +2735,7 @@ function updatePlayer(){
   if (P.onGround) P.coyote = 6; else if (P.coyote > 0) P.coyote--;
   const hop = G.fx.hop > 0, bub = G.fx.bubble > 0;
   if (P.jumpBuf > 0 && P.coyote > 0){
-    P.vy = -C.jump * (boost ? 1.08 : 1) * (hop ? 1.3 : 1); P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.jumping = true; audio.sfx('jump');
+    P.vy = -C.jump * jumpMul() * (boost ? 1.08 : 1) * (hop ? 1.3 : 1); P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.jumping = true; audio.sfx('jump');
     if (hop) burst(P.x + 11, P.y + 28, '#ff9ac0', 10, 2.5, 0.05, 3);
   } else if (pressed.jump && !P.onGround && G.fx.wings > 0 && P.airJumps > 0){
     P.airJumps--; P.vy = -C.jump * 0.85; P.jumpBuf = 0; P.jumping = true; audio.sfx('jump');
@@ -3146,10 +3225,11 @@ function updatePlay(){
 
   // candies
   for (const k in G.fx) if (G.fx[k] > 0) G.fx[k]--;
-  if (G.fx.magnet > 0) for (const c of candies){
-    const dx = P.x + 11 - (c.x + 8), dy = P.y + 15 - (c.y + 10), d = Math.hypot(dx, dy);
-    if (d < 220 && d > 1){ c.x += dx / d * 6; c.y += dy / d * 6; }
-  }
+  { const range = G.fx.magnet > 0 ? 220 : skill('magnet') ? magnetRange(skill('magnet')) : 0;   // power-up or the Candy Magnet skill
+    if (range) for (const c of candies){
+      const dx = P.x + 11 - (c.x + 8), dy = P.y + 15 - (c.y + 10), d = Math.hypot(dx, dy);
+      if (d < range && d > 1){ const sp = G.fx.magnet > 0 ? 6 : 4; c.x += dx / d * sp; c.y += dy / d * sp; }
+    } }
   for (const c of candies) if (c.alive && overlap(P, c)){ c.alive = false; addCandy(c.x + 8, c.y + 10); }
   candies = candies.filter(c => c.alive);
   enemies = enemies.filter(e => e.alive);
@@ -3194,7 +3274,7 @@ function updateDying(){
       G.cont = {score:G.score, candy:G.candy, sel:PROF.wallet >= CONT_PRICE ? 0 : 1};   // remembered, so new lives can be bought
       G.contMsg = ''; G.contMsgT = 0;
       G.state = 'gameover'; G.timer = 0; saveHi(); addHof(G.score); audio.sfx('over');
-      if (sl){ Object.assign(sl, {lives:HERO.lives, score:0, candy:0, powered:false, shield:false}); persist(); }
+      if (sl){ Object.assign(sl, {lives:startLives(), score:0, candy:0, powered:false, shield:false}); persist(); }
     } else {
       if (sl){ sl.lives = G.lives; sl.powered = false; sl.shield = false; persist(); }
       startLevel(G.level, true);
@@ -3203,7 +3283,7 @@ function updateDying(){
 }
 
 /* ---------------- GAME OVER: new lives for a lot of candy from the candy bank ---------------- */
-const CONT_PRICE = 500, CONT_LIVES = 3;                       // what new lives cost, and how many you get
+const CONT_PRICE = 500, contLives = () => 3 + skill('lives');                    // what new lives cost, and how many you get
 const contRect = k => ({x:VW/2 - 310 + k*320, y:414, w:300, h:72});
 function buyContinue(){
   const c = G.cont || {score:G.score, candy:G.candy};
@@ -3211,10 +3291,10 @@ function buyContinue(){
     audio.sfx('hurt'); G.contMsg = 'Not enough candy. You need ' + (CONT_PRICE - PROF.wallet) + ' more.'; G.contMsgT = 150; return;
   }
   PROF.wallet -= CONT_PRICE; profSave();
-  G.lives = CONT_LIVES; G.score = c.score; G.candy = c.candy; G.powered = false; G.shield = false;
+  G.lives = contLives(); G.score = c.score; G.candy = c.candy; G.powered = false; G.shield = false;
   const sl = saves[G.slot];
   if (sl){ Object.assign(sl, {lives:G.lives, score:G.score, candy:G.candy, powered:false, shield:false}); persist(); }
-  G.cont = null; audio.sfx('oneup'); toast(CONT_LIVES + ' new lives! Go get them!');
+  G.cont = null; audio.sfx('oneup'); toast(contLives() + ' new lives! Go get them!');
   startLevel(G.level, true);                                  // back in at the last gate you reached
 }
 function stepGameOver(){
@@ -3240,7 +3320,7 @@ function drawGameOver(){
     panel(r.x, r.y, r.w, r.h, sel);
     if (k === 0){
       ctx.globalAlpha = rich ? 1 : 0.55;
-      txt('Buy ' + CONT_LIVES + ' new lives', cx, r.y + 14, 11, rich ? '#7cf06b' : '#cbb8e6', 'center');
+      txt('Buy ' + contLives() + ' new lives', cx, r.y + 14, 11, rich ? '#7cf06b' : '#cbb8e6', 'center');
       drawCandyIcon(cx - 92, r.y + 44); txt(CONT_PRICE + ' candy', cx - 70, r.y + 42, 10, '#ffcf4a');
       txt('Bank: ' + PROF.wallet, cx + 118, r.y + 44, 8, '#cbb8e6', 'right');
       ctx.globalAlpha = 1;
@@ -3865,7 +3945,7 @@ function drawFinale(){
 const endRect = k => ({x:VW/2 - 350 + k*370, y:140, w:330, h:282});
 const hasMedal = () => owns('neck', 'gold');
 function playAgain(){
-  G.lives = Math.max(G.lives, HERO.lives);                       // a fresh round: back to Halloween's first level, score and candy stay
+  G.lives = Math.max(G.lives, startLives());                     // a fresh round: back to Halloween's first level, score and candy stay
   const first = worldPos(0)*4;
   syncToSlot(); G.mapSel = first; audio.sfx('door'); startLevel(first, false);
 }
@@ -5454,6 +5534,7 @@ function step(){
   if (portraitBlock && G.state === 'play') G.paused = true;
   if (pressed.check && G.state !== 'check' && G.state !== 'name'){ openCheck(); pressed.check = false; }
   if (pressed.board){ openBoard(); pressed.board = false; }
+  if (pressed.skills){ openSkills(); pressed.skills = false; }
   if (pressed.hero && (G.state === 'title' || (G.state === 'files' && !pressed.del))){ pressed.hero = false; openWardrobe(); }
   if (PROF.dirty && G.frame % 240 === 0) profSave();
   if (pendingNews() && ['title', 'files', 'map', 'gameover', 'win', 'medal', 'xmasend'].includes(G.state)){      // leaderboard news pops up in calm moments
@@ -6589,6 +6670,7 @@ function drawMap(){
   txt(WORLD_NAMES[G.mapSel >> 2], VW/2, 140, 9, wcol, 'center');
   // buttons
   panel(16, VH - 62, 220, 44, false); txt(hint('Files (Esc)', 'Files (B)', 'Files'), 126, VH - 46, 9, '#fff', 'center');
+  panel(VW - 236, VH - 114, 220, 44, false); txt(hint('Skills (U)', 'Skills', 'Skills'), VW - 126, VH - 98, 9, '#7cf06b', 'center');
   panel(VW - 236, VH - 62, 220, 44, false); txt(hint('Dressing room (C)', 'Dressing room (Y)', 'Dressing room'), VW - 126, VH - 46, 9, '#fff', 'center');
   if ((G.frame >> 5) % 2 === 0) txt(hint('Left / Right, Enter to play', 'D-pad, A to play', 'Tap a level twice to play'), VW/2, VH - 46, 9, '#fff', 'center');
   drawVignette();
