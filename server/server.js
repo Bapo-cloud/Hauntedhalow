@@ -5,6 +5,7 @@
 
    GET  /top        -> {players:[{id, name, score, skin, t}]}   the best 100
    POST /score      <- {key, name, score, skin}                 keeps the higher score
+   POST /redeem     <- {code}  -> {code, reward:{candy, skill, levels, items, lives}}   gift codes from codes.json (same branch)
    Environment: GITHUB_TOKEN (contents read/write on the repo), GITHUB_REPO, DATA_BRANCH, DATA_PATH, ALLOWED_ORIGINS, PORT */
 'use strict';
 const http = require('http');
@@ -98,6 +99,36 @@ async function save(){
   finally { saving = false; }
 }
 
+/* ---- gift codes: codes.json in the data branch, edited by hand on GitHub. Read again at most once a minute. ----
+   {"codes": {"WELCOME": {"candy": 1000, "skill": "luck", "levels": 1, "items": ["hat:top"], "lives": 3, "until": "2026-12-31"}}} */
+const CODES_FILE = process.env.CODES_PATH || 'codes.json';
+const SKILL_IDS = ['jump', 'lives', 'time', 'magnet', 'luck'];
+let codes = {}, codesAt = 0;
+const normCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+async function loadCodes(){
+  if (Date.now() - codesAt < 60000) return;
+  const r = await gh('/contents/' + CODES_FILE + '?ref=' + BRANCH);
+  if (r.status === 404){ codes = {}; codesAt = Date.now(); return; }
+  if (!r.ok) throw new Error('codes ' + r.status);
+  const j = await r.json(), raw = JSON.parse(Buffer.from(j.content, 'base64').toString('utf8'));
+  const out = {};
+  for (const [k, v] of Object.entries((raw && raw.codes) || {})){
+    const c = normCode(k); if (!c || !v || typeof v !== 'object') continue;
+    const rw = {};
+    const candy = Math.floor(Number(v.candy)); if (candy > 0) rw.candy = Math.min(candy, 1000000);
+    if (SKILL_IDS.includes(v.skill)){ rw.skill = v.skill; rw.levels = Math.max(1, Math.min(5, Math.floor(Number(v.levels)) || 1)); }
+    const items = (Array.isArray(v.items) ? v.items : v.item ? [v.item] : []).filter(i => typeof i === 'string' && /^(hat|face|back|neck|color):[a-z0-9_-]{1,20}$/.test(i)).slice(0, 10);
+    if (items.length) rw.items = items;
+    const lives = Math.floor(Number(v.lives)); if (lives > 0) rw.lives = Math.min(lives, 20);
+    if (!Object.keys(rw).length) continue;
+    out[c] = {reward:rw, until:/^\d{4}-\d{2}-\d{2}$/.test(v.until || '') ? v.until : ''};
+  }
+  codes = out; codesAt = Date.now();
+}
+const wrong = new Map();            // ip -> [wrong tries, windowStart]: max 10 wrong codes per 10 minutes (no guessing)
+function tooManyWrong(ip){ const w = wrong.get(ip); return !!w && Date.now() - w[1] < 600000 && w[0] >= 10; }
+function noteWrong(ip){ const now = Date.now(), w = wrong.get(ip); if (!w || now - w[1] > 600000) wrong.set(ip, [1, now]); else w[0]++; }
+
 /* ---- web ---- */
 const hits = new Map();             // ip -> [count, windowStart]: max 40 requests per minute
 function limited(ip){
@@ -135,6 +166,19 @@ const server = http.createServer(async (req, res) => {
       if (!p || score > p.score){ players[id] = {name, score, skin, t:Date.now()}; scheduleSave(); }
       else if (p.name !== name || JSON.stringify(p.skin) !== JSON.stringify(skin)){ p.name = name; p.skin = skin; scheduleSave(); }
       return send(res, 200, Object.assign({id}, top()), origin);
+    }
+    if (req.method === 'POST' && url.pathname === '/redeem'){
+      let raw = '';
+      for await (const c of req){ raw += c; if (raw.length > 500) return send(res, 413, {error:'Too big'}, origin); }
+      let b; try { b = JSON.parse(raw); } catch(e){ return send(res, 400, {error:'Bad JSON'}, origin); }
+      if (tooManyWrong(ip)) return send(res, 429, {error:'wait'}, origin);
+      const code = normCode(b.code);
+      if (!code || code.length > 24){ noteWrong(ip); return send(res, 404, {error:'unknown'}, origin); }
+      await loadCodes();
+      const c = codes[code];
+      if (!c){ noteWrong(ip); return send(res, 404, {error:'unknown'}, origin); }
+      if (c.until && new Date().toISOString().slice(0, 10) > c.until) return send(res, 410, {error:'expired'}, origin);
+      return send(res, 200, {code, reward:c.reward}, origin);
     }
     return send(res, 404, {error:'Not found'}, origin);
   } catch(e){

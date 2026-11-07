@@ -154,6 +154,10 @@ body:not(.isadmin) #admin{display:none!important}
 .pad button.royal{display:none;align-items:center;justify-content:center;border-color:#ffd24a;color:#ffd24a;box-shadow:0 0 14px rgba(255,210,74,.55)}
 body.champ .pad button.royal{display:flex}
 .pad button.royal.cool{opacity:.4;box-shadow:none}
+#acct .only-codes{display:none}
+#acct[data-mode=codes] .only-codes{display:block}
+#acct[data-mode=codes] .not-signed{display:none}
+#acct #cdIn{text-transform:uppercase;letter-spacing:2px}
 #acct .only-skills{display:none}
 #acct[data-mode=skills] .only-skills{display:block}
 #acct[data-mode=skills] .not-signed{display:none}
@@ -263,6 +267,7 @@ body.champ .pad button.royal{display:flex}
         <div class="wbal" id="mnBank"></div>
         <button type="button" class="go" id="mnWard">Dressing room</button>
         <button type="button" class="alt" id="mnSkills">Skills</button>
+        <button type="button" class="alt" id="mnCodes">Codes</button>
         <button type="button" class="alt" id="mnBoard">Leaderboard</button>
         <button type="button" class="alt" id="mnAcct">Account</button>
         <button type="button" class="alt" id="mnClose">Back to the game</button>
@@ -278,6 +283,15 @@ body.champ .pad button.royal{display:flex}
         <div class="wtabs" id="wTabs" role="tablist"></div>
         <div class="wlist" id="wList"></div>
         <button type="button" class="go" id="wClose">Back to the game</button>
+      </div>
+      <div class="only-codes">
+        <p class="sub">Got a secret code? Type it in and get a surprise!</p>
+        <label for="cdIn">Code</label>
+        <input id="cdIn" type="text" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. SEASONCHAOS">
+        <button type="button" class="go" id="cdGo">Redeem code</button>
+        <div class="msg" id="cdMsg" role="status" aria-live="polite"></div>
+        <div class="fine">Every code works once on this device. Codes need the internet.</div>
+        <button type="button" class="alt" id="cdClose">Back to the game</button>
       </div>
       <div class="only-skills">
         <p class="sub">Lasting upgrades for Pip, paid with candy from your candy bank</p>
@@ -1139,13 +1153,13 @@ const SHOP = [
   {id:'pumpkin', slot:'hat',   name:'Pumpkin Hat',      price:160},
   {id:'halo',    slot:'hat',   name:'Golden Halo',      price:220},
   {id:'crown',   slot:'hat',   name:'Royal Crown',      price:300},
-  {id:'santa',   slot:'hat',   name:'Santa Hat',        price:0, prize:true, unlock:'Finish World 2'},
+  {id:'santa',   slot:'hat',   name:'Santa Hat',        price:0, prize:true, unlock:'Finish World 4'},
   {id:'antlers', slot:'hat',   name:'Reindeer Antlers', price:110},
-  {id:'flower',  slot:'hat',   name:'Flower Crown',     price:0, prize:true, unlock:'Finish World 3'},
+  {id:'flower',  slot:'hat',   name:'Flower Crown',     price:0, prize:true, unlock:'Finish World 1'},
   {id:'pirate',  slot:'hat',   name:'Pirate Hat',       price:140},
   {id:'rednose', slot:'face',  name:'Shiny Red Nose',   price:40},
   {id:'whiskers',slot:'face',  name:'Bunny Whiskers',   price:30},
-  {id:'goggles', slot:'face',  name:'Diving Goggles',   price:0, prize:true, unlock:'Finish World 4'},
+  {id:'goggles', slot:'face',  name:'Diving Goggles',   price:0, prize:true, unlock:'Finish World 2'},
   {id:'basket',  slot:'back',  name:'Easter Basket',    price:90},
   {id:'shell',   slot:'back',  name:'Seashell Pack',    price:80},
   {id:'glasses', slot:'face',  name:'Round Glasses',    price:25},
@@ -1157,7 +1171,7 @@ const SHOP = [
   {id:'pack',    slot:'back',  name:'Candy Backpack',   price:70},
   {id:'cape',    slot:'back',  name:'Hero Cape',        price:120},
   {id:'wings',   slot:'back',  name:'Bat Wings',        price:200},
-  {id:'gold',    slot:'neck',  name:'Golden Medal',     price:0, prize:true, unlock:'Finish World 1'},   // only for finishing the game; it looks great and does nothing
+  {id:'gold',    slot:'neck',  name:'Golden Medal',     price:0, prize:true, unlock:'Finish World 3'},   // only for finishing the game; it looks great and does nothing
   {id:'teal',    slot:'color', name:'Teal Coat',        price:0},
   {id:'crimson', slot:'color', name:'Crimson Coat',     price:40},
   {id:'violet',  slot:'color', name:'Violet Coat',      price:40},
@@ -1176,14 +1190,16 @@ function cleanLook(l){                                     // any junk in -> a l
   for (const sl of SLOTS){ const id = typeof l[sl.id] === 'string' ? l[sl.id] : ''; if (shopItem(sl.id, id)) out[sl.id] = id; }
   return out;
 }
-const PROF = {wallet:0, owned:{}, eq:defaultLook(), skills:{}, dirty:false};
+const PROF = {wallet:0, owned:{}, eq:defaultLook(), skills:{}, redeemed:[], extraLives:0, dirty:false};
 const W = {tab:'hat', tryOn:{}, dir:1};
 const isChampion = () => !!ME() && PRIZE.crown === ME();          // the Champion Crown belongs to the #1 player (save file) only
 const owns = (slot, id) => id === 'teal' && slot === 'color' || (slot === 'hat' && id === 'champ' ? isChampion() : !!PROF.owned[slot + ':' + id]);
 function loadProf(){
   let raw = null;
   try { raw = JSON.parse(localStorage.getItem(acctKey('prof')) || 'null'); } catch(e){}
-  PROF.wallet = 0; PROF.owned = {}; PROF.eq = defaultLook(); PROF.skills = {}; PROF.dirty = false; W.tryOn = {};
+  PROF.wallet = 0; PROF.owned = {}; PROF.eq = defaultLook(); PROF.skills = {}; PROF.redeemed = []; PROF.extraLives = 0; PROF.dirty = false; W.tryOn = {};
+  if (raw && Array.isArray(raw.redeemed)) PROF.redeemed = raw.redeemed.filter(c => typeof c === 'string' && /^[A-Z0-9]{1,24}$/.test(c)).slice(-500);
+  if (raw) PROF.extraLives = Math.max(0, Math.min(99, Math.floor(Number(raw.extraLives)) || 0));
   if (!raw || typeof raw !== 'object') return;
   PROF.wallet = Math.max(0, Math.min(99999999, Math.floor(Number(raw.wallet)) || 0));
   if (raw.skills && typeof raw.skills === 'object') for (const s of SKILLS){ const l = Math.floor(Number(raw.skills[s.id])) || 0; if (l > 0) PROF.skills[s.id] = Math.min(l, SKILL_PRICE.length); }
@@ -1195,7 +1211,7 @@ function loadProf(){
 function profSave(){
   PROF.dirty = false;
   if (!ACCT.id) return;
-  try { localStorage.setItem(acctKey('prof'), JSON.stringify({wallet:PROF.wallet, owned:Object.keys(PROF.owned), eq:PROF.eq, skills:PROF.skills})); } catch(e){}
+  try { localStorage.setItem(acctKey('prof'), JSON.stringify({wallet:PROF.wallet, owned:Object.keys(PROF.owned), eq:PROF.eq, skills:PROF.skills, redeemed:PROF.redeemed, extraLives:PROF.extraLives})); } catch(e){}
   boardSkin();
 }
 function earn(n){ if (ACCT.id){ PROF.wallet += n; PROF.dirty = true; } }
@@ -1706,7 +1722,7 @@ const acTabIn = document.getElementById('acTabIn'), acTabNew = document.getEleme
 function acMsg(t, ok){ acMsgEl.textContent = t || ''; acMsgEl.classList.toggle('ok', !!ok); }
 function acSetMode(m){
   acEl.dataset.mode = m; UI.mode = m;
-  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', skills:'Skills', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Season Chaos';
+  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', skills:'Skills', codes:'Codes', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Season Chaos';
   acTabIn.setAttribute('aria-selected', String(m === 'login')); acTabNew.setAttribute('aria-selected', String(m === 'create'));
   acGo.textContent = m === 'create' ? 'Create account' : 'Log in';
   acPass.setAttribute('autocomplete', m === 'create' ? 'new-password' : 'current-password');
@@ -1830,13 +1846,14 @@ function showPanel(m){
   releaseAll();
   if (m === 'board'){ renderBoard(); netSoon(0); }              // show the saved list at once, then fetch the newest one
   if (m === 'skills'){ document.getElementById('skMsg').textContent = ''; renderSkills(); }
+  if (m === 'codes'){ cdSay(''); document.getElementById('cdIn').value = ''; }
   if (m === 'news') renderNews(NEWS.list);
   if (m === 'wardrobe'){ W.tryOn = {}; acMsg(''); renderWardrobe(); }
   acSetMode(m);
   if (m === 'menu') document.getElementById('mnBank').textContent = 'Candy bank: ' + PROF.wallet;
   UI.acctOpen = true; acEl.classList.add('open');
   if (G.state === 'play') G.paused = true;                    // a menu opens -> the game pauses
-  const f = {board:'bdClose', wardrobe:'wClose', skills:'skClose', menu:'mnWard', news:'nwClose'}[m];
+  const f = {board:'bdClose', wardrobe:'wClose', skills:'skClose', codes:'cdIn', menu:'mnWard', news:'nwClose'}[m];
   setTimeout(() => { try { document.getElementById(f).focus(); } catch(e){} }, 30);
 }
 const canOpenPanel = () => !!ACCT.id && !UI.acctOpen && PANEL_STATES.includes(G.state);
@@ -1920,6 +1937,58 @@ document.getElementById('btnMenu').addEventListener('click', e => { audio.unlock
 document.getElementById('mnWard').addEventListener('click', () => showPanel('wardrobe'));
 document.getElementById('mnBoard').addEventListener('click', () => showPanel('board'));
 document.getElementById('mnSkills').addEventListener('click', () => showPanel('skills'));
+document.getElementById('mnCodes').addEventListener('click', () => showPanel('codes'));
+document.getElementById('cdClose').addEventListener('click', () => closeAcct());
+document.getElementById('cdGo').addEventListener('click', () => redeemCode());
+document.getElementById('cdIn').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); redeemCode(); } });
+
+/* ---------------- CODES: gift codes, checked online by the leaderboard server (list: codes.json on GitHub) ---------------- */
+function cdSay(t, good){ const m = document.getElementById('cdMsg'); m.textContent = t; m.classList.toggle('ok', !!good); }
+async function redeemCode(){
+  const inp = document.getElementById('cdIn'), go = document.getElementById('cdGo');
+  const code = String(inp.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code){ cdSay('Please type a code first.'); return; }
+  if (PROF.redeemed.includes(code)){ cdSay('You already used this code.'); audio.sfx('hurt'); return; }
+  if (go.disabled) return;
+  go.disabled = true; cdSay('Checking the code... (this can take up to a minute if the server was asleep)', true);
+  try {
+    const r = await fetch(BOARD_URL + '/redeem', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code})});
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.reward){
+      if (PROF.redeemed.includes(code)){ cdSay('You already used this code.'); return; }   // tapped twice while waiting
+      const got = giveCode(j.reward);
+      PROF.redeemed.push(code); profSave(); audio.sfx('oneup'); inp.value = '';
+      cdSay('Code accepted! You got: ' + got.join(', ') + '.', true);
+    } else {
+      audio.sfx('hurt');
+      cdSay({unknown:'This code does not exist. Check the spelling.', expired:'Sorry, this code has expired.', wait:'Too many wrong codes. Please wait 10 minutes.'}[j.error] || 'The code could not be checked right now. Please try again later.');
+    }
+  } catch(e){ audio.sfx('hurt'); cdSay('No connection. Codes need the internet. Please try again in a minute.'); }
+  finally { go.disabled = false; }
+}
+function giveCode(rw){                                               // -> list of what the player got
+  const got = [];
+  if (rw.candy > 0){ earn(Math.floor(rw.candy)); got.push(fmtN(Math.floor(rw.candy)) + ' candy'); }
+  const s = SKILLS.find(k => k.id === rw.skill);
+  if (s){
+    const before = skill(s.id), after = Math.min(SKILL_PRICE.length, before + Math.max(1, Math.floor(rw.levels) || 1));
+    if (after > before){ PROF.skills[s.id] = after; got.push(s.name + ' level ' + after); }
+    else got.push(s.name + ' (already at the highest level)');
+  }
+  for (const it of Array.isArray(rw.items) ? rw.items : []){
+    const [sl, id] = String(it).split(':'), item = shopItem(sl, id);
+    if (!item || item.special) continue;
+    if (owns(sl, id)) got.push(item.name + ' (you already had it)'); else { PROF.owned[sl + ':' + id] = true; got.push(item.name); }
+  }
+  const n = Math.min(20, Math.floor(rw.lives) || 0);
+  if (n > 0){
+    const sl = saves[G.slot], inLevel = lvl && ['play', 'intro', 'talk', 'dying', 'clear'].includes(G.state);
+    if (sl && inLevel){ G.lives = Math.min(99, G.lives + n); syncToSlot(); got.push(n + ' extra lives'); }
+    else if (sl && G.state === 'map'){ sl.lives = Math.min(99, sl.lives + n); persist(); got.push(n + ' extra lives for ' + sl.name); }
+    else { PROF.extraLives = Math.min(99, (PROF.extraLives || 0) + n); got.push(n + ' extra lives (you get them when you open a save file)'); }
+  }
+  return got.length ? got : ['nothing new'];
+}
 document.getElementById('skClose').addEventListener('click', () => closeAcct());
 document.getElementById('mnAcct').addEventListener('click', () => openAcct('signed'));
 if (!ACCOUNTS_ENABLED){
@@ -1996,6 +2065,7 @@ const MAP_X = [140, 370, 600, 830], MAP_Y = [340, 260, 340, 250];
 function startFromMap(){
   const sl = saves[G.slot];
   if (sl.fresh){ sl.lives = startLives(); sl.fresh = false; persist(); }
+  if (PROF.extraLives > 0){ sl.lives = Math.min(99, sl.lives + PROF.extraLives); PROF.extraLives = 0; persist(); profSave(); toast('Extra lives from your code!'); }
   loadFromSlot(); lvl = null;
   sl.seen = sl.seen || {};
   const lv = G.mapSel, w = lv >> 2, key = WORLD_STORY[w].key;   // each world's story is told once per save file
