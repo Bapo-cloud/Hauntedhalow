@@ -1,8 +1,8 @@
 /* Season Chaos service worker: keeps the game on the device so it starts fast and plays offline.
    The game page itself is loaded fresh from the internet when possible, so updates arrive by themselves. */
-const VERSION = 'hh-app-v5';
+const VERSION = 'hh-app-v6';
 const FILES = ['./', './index.html', './manifest.webmanifest',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
+  './icons/sc-icon-192.png', './icons/sc-icon-512.png', './icons/sc-maskable-192.png', './icons/sc-maskable-512.png', './icons/sc-apple-180.png', './icons/sc-favicon-32.png',
   './fonts/creepster.woff2', './fonts/pressstart2p-latin.woff2', './fonts/pressstart2p-latin-ext.woff2'];
 // A new version waits until the player taps UPDATE in the game (the button stays until then).
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); });

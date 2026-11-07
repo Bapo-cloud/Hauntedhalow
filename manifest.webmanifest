@@ -1,7 +1,7 @@
 {
   "name": "Season Chaos",
   "short_name": "Season Chaos",
-  "description": "A Halloween and Christmas platformer with Pip, your best friend.",
+  "description": "A platformer through all four seasons: Easter, summer at the sea, Halloween and Christmas, with Pip, your best friend.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -13,8 +13,9 @@
   "lang": "en",
   "categories": ["games", "kids", "entertainment"],
   "icons": [
-    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    {"src": "icons/sc-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/sc-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/sc-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+    {"src": "icons/sc-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
   ]
 }

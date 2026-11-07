@@ -12,8 +12,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Season Chaos">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/sc-favicon-32.png">
+<link rel="apple-touch-icon" href="icons/sc-apple-180.png">
 <link rel="preload" href="fonts/pressstart2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/creepster.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -899,7 +899,13 @@ const LEVELS_FIXED = [
    death, so the lantern and the layout stay the same until you leave the level. */
 function mulberry32(a){ return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const newSeed = () => (Math.random() * 4294967296) >>> 0;
-const GEN = [
+/* The worlds are played in calendar order: Easter (spring), the sea (summer), Halloween (autumn), Christmas (winter).
+   Everything below is written in the old order (Halloween, Christmas, Easter, sea = worlds 0-3) and sorted with
+   byWorldOrder. A level's theme number stays its old level number, so GEN[i].theme tells which level it really is. */
+const WORLD_ORDER = [2, 3, 0, 1];
+const byWorldOrder = arr => WORLD_ORDER.flatMap(w => arr.slice(w*4, w*4 + 4));
+const worldPos = old => WORLD_ORDER.indexOf(old);            // where an old world (0 Halloween, 1 Christmas, 2 Easter, 3 sea) is now
+const GEN = byWorldOrder([
   {theme:0, name:'Pumpkin Patch',     run:[130, 150], foes:['pumpkin', 'pumpkin', 'skeleton', 'bat'],          spikes:false, arenaLen:40},
   {theme:1, name:'Moonlit Graveyard', run:[150, 172], foes:['skeleton', 'skeleton', 'pumpkin', 'bat'],        spikes:true,  arenaLen:38},
   {theme:2, name:'Haunted Manor',     run:[150, 176], foes:['pumpkin', 'skeleton', 'ghost', 'spider', 'bat'], spikes:true,  arenaLen:40, ceiling:true},
@@ -919,8 +925,9 @@ const GEN = [
   {theme:13, name:'Shipwreck Bay',      run:[150, 172], foes:['skeleton', 'skeleton', 'jelly', 'jelly', 'puffer', 'pumpkin'],       spikes:true, arenaLen:38},
   {theme:14, name:'Sunken Palace',      run:[150, 176], foes:['jelly', 'puffer', 'ghost', 'spider', 'jelly', 'pumpkin'],            spikes:true, arenaLen:40, ceiling:true},
   {theme:15, name:'The Abyss',          run:[100, 120], foes:['jelly', 'puffer', 'jelly', 'puffer', 'skeleton', 'pumpkin'],          spikes:true, arenaLen:36}
-];
-const WORLD_NAMES = ['World 1: Halloween', 'World 2: Christmas', 'World 3: Easter', 'World 4: Under the Sea'];
+]);
+GEN[0].spikes = false;                                        // the very first level of the game stays gentle
+const WORLD_NAMES = WORLD_ORDER.map((w, i) => 'World ' + (i + 1) + ': ' + ['Halloween', 'Christmas', 'Easter', 'Under the Sea'][w]);
 const AIR_FOES = ['bat', 'ghost', 'bee', 'jelly', 'puffer'], GROUND_FOES = ['pumpkin', 'skeleton', 'penguin', 'elf', 'bunny', 'snapflower'];
 const GEN_ROWS = ['B?B', '?B?B?', 'B?B?B', '?B?', '??', 'BB?BB', '?P?', 'B?BPB'];
 const GEN_ARENA = [
@@ -1185,12 +1192,30 @@ function wearItem(slot, id){                               // owned items: wear 
 
 /* ---------------- SAVE FILES ---------------- */
 const HOF_KEY = 'hh_hof_v1';
-function blankSlot(name){ return {name, char:0, unlocked:0, score:0, lives:3, candy:0, powered:false, created:Date.now(), fresh:true, seen:{}}; }
+function blankSlot(name){ return {name, char:0, unlocked:0, cleared:0, order:'cal', score:0, lives:3, candy:0, powered:false, created:Date.now(), fresh:true, seen:{}}; }
+/* Which levels are beaten and open. unlocked = how many levels in a row (from level 1) are beaten, cleared = a bit per
+   beaten level on top of that (old save files: their worlds kept their progress when the order changed). A level is open
+   when it is the first one, already beaten, or the level before it is beaten. */
+const lvDone = (sl, i) => i < sl.unlocked || ((sl.cleared || 0) >>> i & 1) === 1;
+const lvOpen = (sl, i) => i >= 0 && i < LEVELS.length && (i === 0 || lvDone(sl, i) || lvDone(sl, i - 1));
+const allDone = sl => { for (let i = 0; i < LEVELS.length; i++) if (!lvDone(sl, i)) return false; return true; };
+function markDone(sl, i){
+  sl.cleared = (sl.cleared || 0) | (1 << i);
+  while (sl.unlocked < LEVELS.length && lvDone(sl, sl.unlocked)) sl.unlocked++;
+}
+const firstToPlay = sl => { for (let i = 0; i < LEVELS.length; i++) if (lvOpen(sl, i) && !lvDone(sl, i)) return i; return LEVELS.length - 1; };
+function convertSlot(sl){                                     // old order (Halloween first): keep every beaten level beaten
+  if (sl.order === 'cal') return sl;
+  const old = Math.max(0, Math.min(16, sl.unlocked | 0));
+  sl.unlocked = 0; sl.cleared = 0; sl.order = 'cal';
+  for (let o = 0; o < old; o++) markDone(sl, worldPos(o >> 2)*4 + (o & 3));
+  return sl;
+}
 let saves = [null, null, null], hof = [];
 function readSaves(id){
   try {
     const raw = JSON.parse(localStorage.getItem(acctKeyFor(id, 'saves')) || 'null');
-    if (Array.isArray(raw)) return [0,1,2].map(i => raw[i] && typeof raw[i].name === 'string' ? Object.assign(blankSlot(raw[i].name), {fresh:false, seen:{}}, raw[i], {char:0}) : null);
+    if (Array.isArray(raw)) return [0,1,2].map(i => raw[i] && typeof raw[i].name === 'string' ? convertSlot(Object.assign(blankSlot(raw[i].name), {fresh:false, seen:{}, order:''}, raw[i], {char:0})) : null);
   } catch(e){}
   return [null, null, null];
 }
@@ -1770,7 +1795,7 @@ function fileCardAt(x, y){ if (y < FILE_Y || y > FILE_Y + FILE_H) return -1; for
 function openFile(i){
   G.slot = i; G.timer = 0; audio.sfx('cp');
   if (!saves[i]){ G.state = 'name'; G.nameBuf = ''; }
-  else { G.mapSel = Math.min(saves[i].unlocked, LEVELS.length - 1); G.state = 'map'; }
+  else { G.mapSel = firstToPlay(saves[i]); G.state = 'map'; }
 }
 function stepFiles(){
   G.timer++;
@@ -1831,21 +1856,24 @@ function startFromMap(){
   if (sl.fresh){ sl.lives = HERO.lives; sl.fresh = false; persist(); }
   loadFromSlot(); lvl = null;
   sl.seen = sl.seen || {};
-  const key = 'pip', lv = G.mapSel, w = lv >> 2;             // the story is told once per save file (and once per world)
-  if (w > 0 && !sl.seen[WORLD_STORY[w].key]){
-    sl.seen[WORLD_STORY[w].key] = true; persist();
-    startWorldCutscene(w, () => startLevel(lv, false));
-  } else if (!sl.seen[key]){
+  const lv = G.mapSel, w = lv >> 2, key = WORLD_STORY[w].key;   // each world's story is told once per save file
+  if (!sl.seen[key]){
     sl.seen[key] = true; persist();
-    startCutscene(() => startLevel(lv, false));
+    if (key === 'pip') startCutscene(() => startLevel(lv, false));
+    else startWorldCutscene(w, () => startLevel(lv, false));
   } else startLevel(lv, false);
+}
+// the map: the next / previous open level, and the next / previous world that has an open level
+function mapStep(sl, from, d){ for (let i = from + d; i >= 0 && i < LEVELS.length; i += d) if (lvOpen(sl, i)) return i; return -1; }
+function worldStep(sl, wb, d){
+  for (let b = wb + d*4; b >= 0 && b < LEVELS.length; b += d*4) for (let k = 0; k < 4; k++) if (lvOpen(sl, b + k)) return b + k;
+  return -1;
 }
 function stepMap(){
   G.timer++;
   const sl = saves[G.slot]; if (!sl){ G.state = 'files'; return; }
-  const maxSel = Math.min(sl.unlocked, LEVELS.length - 1);
-  if (pressed.left){ if (G.mapSel > 0) G.mapSel--; audio.sfx('bump'); }
-  if (pressed.right){ if (G.mapSel < maxSel) G.mapSel++; audio.sfx('bump'); }
+  if (pressed.left){ const i = mapStep(sl, G.mapSel, -1); if (i >= 0) G.mapSel = i; audio.sfx('bump'); }
+  if (pressed.right){ const i = mapStep(sl, G.mapSel, 1); if (i >= 0) G.mapSel = i; audio.sfx('bump'); }
   if (pressed.pause){ G.state = 'files'; G.timer = 0; return; }
   if (pressed.hero){ pressed.hero = false; openWardrobe(); return; }
   let go = false;
@@ -1853,11 +1881,11 @@ function stepMap(){
     const t = pressed.tap;
     if (t.y > VH - 70 && t.x > VW - 250){ openWardrobe(); return; }
     if (t.y > VH - 70 && t.x < 250){ G.state = 'files'; G.timer = 0; return; }
-    const wb = (G.mapSel >> 2) * 4;
-    if (t.y > 62 && t.y < 158 && t.x > VW - 112 && wb + 4 < LEVELS.length && maxSel >= wb + 4){ G.mapSel = wb + 4; G.timer = 0; audio.sfx('cp'); return; }
-    if (t.y > 62 && t.y < 158 && wb > 0 && t.x < 112){ G.mapSel = wb - 1; G.timer = 0; audio.sfx('cp'); return; }
+    const wb = (G.mapSel >> 2) * 4, nx = worldStep(sl, wb, 1), pv = worldStep(sl, wb, -1);
+    if (t.y > 62 && t.y < 158 && t.x > VW - 112 && nx >= 0){ G.mapSel = nx; G.timer = 0; audio.sfx('cp'); return; }
+    if (t.y > 62 && t.y < 158 && pv >= 0 && t.x < 112){ G.mapSel = pv; G.timer = 0; audio.sfx('cp'); return; }
     for (let k = 0; k < 4; k++) if (Math.hypot(t.x - MAP_X[k], t.y - MAP_Y[k]) < 60){ const i = wb + k;
-      if (i > maxSel) audio.sfx('bump');
+      if (!lvOpen(sl, i)) audio.sfx('bump');
       else if (i === G.mapSel && G.timer > 10) go = true;
       else { G.mapSel = i; audio.sfx('bump'); }
     }
@@ -1879,7 +1907,7 @@ const STORIES = [
     prologue:[
       "Halloween night in Haunted Hollow. You and your best friend Pip are going trick-or-treating, and the candy bowls are full!",
       "Suddenly the sky cracks open! A giant purple portal swirls above the village, and a cold wind blows out the lanterns.",
-      "Monsters pour out: the Great Gourd, the Bone Baron, the Phantom Bride and their boss, Grimhallow! 'Halloween ends tonight!'",
+      "Monsters pour out: the Great Gourd, the Bone Baron, the Phantom Bride and their boss... Grimhallow is back! 'Halloween ends tonight!'",
       "They steal every single candy, smash the pumpkins and snuff out the lights. They want to destroy Halloween for good!",
       "But Pip does not run. 'Not on our Halloween! Come on, partner, we will get it all back together!'"
     ],
@@ -2044,7 +2072,7 @@ STORIES[0].levels.push(
 STORIES[0].taunts.push("No presents for you, little snowflakes!", "Halt! Nobody passes the Nutcracker King!", "Freeze! Christmas is cancelled. Forever.", "Christmas freezes tonight. With you.");
 STORIES[0].xmas = {
   prologue:[
-    "Months later, Haunted Hollow is covered in snow. It is Christmas Eve, the big tree in the square glitters, and every house is full of presents.",
+    "Weeks later, Haunted Hollow is covered in snow. It is Christmas Eve, the big tree in the square glitters, and every house is full of presents.",
     "But at midnight a cold wind howls. A frosty blue portal cracks open above the village. Grimhallow is back, and this time he wears a stolen Santa hat!",
     "'You ruined my Halloween,' he hisses, 'so I will freeze your Christmas!' His winter monsters grab every single present and fly off to the north.",
     "Pip pulls on his warmest scarf. 'Christmas without presents? Not on our watch! Come on, partner, the trail leads through the snow!'"
@@ -2052,7 +2080,7 @@ STORIES[0].xmas = {
   epilogue:[
     "The stolen Santa hat flies off Grimhallow's head, and with a howl of icy wind he is pulled back into the frosty portal. Snap! It closes for good.",
     "The presents come tumbling down like snow. The elves thaw out, the lights on the big tree flicker back on, and somewhere above the clouds sleigh bells jingle.",
-    "On Christmas morning the whole village opens presents together. One of them has Pip's name on it: a real Santa hat! 'Merry Christmas, best friend,' says Pip."
+    "On Christmas morning the whole village opens presents together. One of them has Pip's name on it: a real Santa hat! 'Merry Christmas, best friend,' says Pip. 'Spring, summer, Halloween and now Christmas. We saved the whole year!'"
   ]
 };
 // world 3: the Easter story
@@ -2125,7 +2153,7 @@ TALKS[0].push(
       O("9", "Nine! 12 minus 5, plus 2. Take this.", 'candy', true),
       O("7", "7? The bunnies brought two more, remember?"),
       O("10", "10? Grimhallow cracked five, not three.")),
-    boss:QUIZ(["You again! Answer my riddle, and then I will wilt your spring forever!"],
+    boss:QUIZ(["So YOU are the pests who beat my friends! Answer my riddle, and then I will wilt your spring forever!"],
       "What can you give away and still keep?",
       O("A smile", "A smile... BAH! That is right. Take this, and FACE ME!", 'magic', true),
       O("An egg", "Give an egg away, and it's gone. Wrong! Now wilt!"),
@@ -2191,8 +2219,13 @@ TALKS[0].push(
       O("Darkness", "Darkness is strong, but not the strongest. Wrong! Now sink!"),
       O("A big shark", "Sharks fear ME! Wrong! Now sink!")) }
 );
-/* Every world after Halloween has its own animated cutscene (prologue), epilogue, prize and end screen. */
-const WORLD_STORY = [
+// chapter intros, boss taunts and talk scenes: sorted into calendar order like the levels
+STORIES[0].levels = byWorldOrder(STORIES[0].levels);
+STORIES[0].taunts = byWorldOrder(STORIES[0].taunts);
+TALKS[0] = byWorldOrder(TALKS[0]);
+/* Every world except Halloween has its own animated cutscene (prologue), epilogue, prize and end screen.
+   Halloween ('pip') uses the big opening cutscene and the finale with the Golden Medal. */
+const WORLD_STORY = WORLD_ORDER.map(w => [
   {key:'pip', name:'Halloween', col:'#ffcf4a'},
   {key:'xmas', name:'Christmas', col:'#bfe8ff', title:'Save Christmas!', label:'A CHRISTMAS TALE', endTitle:'Christmas is saved!',
    prologue:STORIES[0].xmas.prologue, epilogue:STORIES[0].xmas.epilogue, scenes:[0, 2, 3, 4],
@@ -2203,9 +2236,9 @@ const WORLD_STORY = [
    prologue:[
      "Spring has come to Haunted Hollow. It is Easter morning, the meadows are full of flowers, and the Easter Bunny's Golden Egg Basket shines in the village square.",
      "Then the sun goes dark. A twisting portal full of thorny vines cracks open in the sky, and every flower around it starts to droop.",
-     "Grimhallow is back! This time he wears a crown of dead leaves. Behind him come the Rotten Egg, the Chocolate Baron and the Thorn Witch.",
+     "Out climbs a gloomy monster called Grimhallow, wearing a crown of dead leaves. Behind him come the Rotten Egg, the Chocolate Baron and the Thorn Witch.",
      "'No more spring!' he roars. His creatures grab the Golden Egg Basket, and with it, every egg in the Hollow. Without the basket, spring will wilt away.",
-     "Pip ties his shoes extra tight. 'Easter without eggs? Spring without flowers? Not on our watch! Come on, partner, follow the eggshells!'"
+     "Pip, your best friend, ties his shoes extra tight. 'Easter without eggs? Spring without flowers? Not on our watch! Come on, partner, follow the eggshells!'"
    ],
    epilogue:[
      "The Golden Egg Basket slips out of Grimhallow's hands and lands softly in the grass. Grimhallow shrieks as the thorny portal pulls him back in. Snap! It is gone.",
@@ -2213,21 +2246,21 @@ const WORLD_STORY = [
      "The Easter Bunny hops over and puts a crown of fresh flowers on Pip's head. 'Happy Easter, best friend,' says Pip. 'Next stop: summer!'"
    ]},
   {key:'sea', name:'the Sea', col:'#7ad8ff', title:'Save the Sea!', label:'A TALE FROM THE DEEP', endTitle:'The sea is saved!',
-   prize:['face', 'goggles'], bigTitle:'The Sea Shines!', line:'You and Pip saved the sea, and all four worlds!', prizeLine:'Pip got Diving Goggles! They are in the Dressing Room.',
+   prize:['face', 'goggles'], bigTitle:'The Sea Shines!', line:'You and Pip saved the sea!', prizeLine:'Pip got Diving Goggles! They are in the Dressing Room.',
    lordLine:'The Deep Lord waits at the bottom of the abyss.', save:'THE SEA', scenes:[0, 1, 2, 3, 4],
    prologue:[
      "Summer! You and Pip are diving at the coral reef with magic bubble helmets. In a giant clam lies the Pearl of the Sea. It makes the whole ocean glow.",
      "Suddenly the water turns cold. A dark whirlpool portal swirls open above the reef, and the fish swim away in fear.",
-     "Grimhallow sinks out of the whirlpool with a crown of seaweed. With him come King Crab, Captain Barnacle and the Siren Queen.",
+     "Grimhallow is back! He sinks out of the whirlpool with a crown of seaweed. With him come King Crab, Captain Barnacle and the Siren Queen.",
      "'Without its pearl, the sea goes dark forever!' laughs Grimhallow. His crew snatches the Pearl of the Sea and dives into the deep.",
-     "Pip makes a brave face behind his helmet. 'A dark sea? Not on our watch! Come on, partner, last adventure. Let's dive!'"
+     "Pip makes a brave face behind his helmet. 'A dark sea? Not on our watch! Come on, partner, let's dive!'"
    ],
    epilogue:[
-     "Down in the Abyss, the Pearl of the Sea slips from Grimhallow's claws and starts to glow brighter and brighter. Grimhallow howls as the whirlpool swallows him. Whoosh! The portal is gone for good.",
+     "Down in the Abyss, the Pearl of the Sea slips from Grimhallow's claws and starts to glow brighter and brighter. Grimhallow howls as the whirlpool swallows him. Whoosh! The portal is gone.",
      "Light spreads through the whole ocean. The coral glows again, the fish come back, and the Siren Queen's song turns into a happy one.",
-     "Back at the beach, the whole village is waiting. Halloween, Christmas, Easter and now the sea. 'Best friend,' says Pip, 'you are the greatest hero Haunted Hollow ever had!'"
+     "Back at the beach, the whole village is waiting with ice cream. 'Best summer ever,' says Pip. 'But I bet Grimhallow is already planning something for Halloween...'"
    ]}
-];
+][w]);
 const REWARD_NAME = {shield:'Pumpkin Shield', magic:'Magic ready', candy:'+10 candy', time:'+20 seconds', life:'Extra life'};
 const BOSS_SHORT = {gourd:'GREAT GOURD', bonelord:'BONE BARON', phantom:'PHANTOM BRIDE', lord:'GRIMHALLOW'};
 const G = {fx:{ghost:0, wings:0, broom:0, magnet:0, freeze:0, hop:0, bubble:0}, shield:false, nameCur:0, checkFrom:null, slot:0, fileSel:0, confirmDel:-1, nameBuf:'', nameShake:0, mapSel:0, lock:null, bossIntro:0, shake:0, state:'title', level:0, score:0, candy:0, lives:3, time:300, frame:0, timer:0, paused:false, powered:false, hurried:false, phase:0};
@@ -3171,15 +3204,15 @@ function updateClear(){
   } else if (G.timer > 80){
     saveHi();
     const sl = saves[G.slot];
-    if (sl) sl.unlocked = Math.max(sl.unlocked, G.level + 1);
+    if (sl) markDone(sl, G.level);
     syncToSlot();
-    if (G.level === 3){                                       // end of world 1: the Halloween finale
+    const w = G.level >> 2, WS = WORLD_STORY[w];
+    if (G.level % 4 === 3 && WS.key === 'pip'){               // end of Halloween: the finale with the Golden Medal
       addHof(G.score); G.mapSel = G.level; audio.sfx('victory');
       startFinale();
-    } else if (G.level % 4 === 3){                            // end of world 2, 3 or 4: epilogue and the world's prize
-      const w = G.level >> 2, WS = WORLD_STORY[w];
+    } else if (G.level % 4 === 3){                            // end of any other world: epilogue and the world's prize
       addHof(G.score); G.mapSel = G.level; audio.sfx('victory');
-      startStory('xmasEnd', WS.epilogue, () => awardWorld(w), {theme:G.level, title:WS.endTitle, label:WS.label + '  -  EPILOGUE'});
+      startStory('xmasEnd', WS.epilogue, () => awardWorld(w), {theme:GEN[G.level].theme, title:WS.endTitle, label:WS.label + '  -  EPILOGUE'});
     } else { G.mapSel = G.level + 1; G.state = 'map'; G.timer = 0; }
   }
   updateFx();
@@ -3767,8 +3800,9 @@ function drawFinale(){
 const endRect = k => ({x:VW/2 - 350 + k*370, y:140, w:330, h:282});
 const hasMedal = () => owns('neck', 'gold');
 function playAgain(){
-  G.lives = Math.max(G.lives, HERO.lives);                       // a fresh round: back to level 1, score and candy stay
-  syncToSlot(); G.mapSel = 0; audio.sfx('door'); startLevel(0, false);
+  G.lives = Math.max(G.lives, HERO.lives);                       // a fresh round: back to Halloween's first level, score and candy stay
+  const first = worldPos(0)*4;
+  syncToSlot(); G.mapSel = first; audio.sfx('door'); startLevel(first, false);
 }
 function takeMedal(){
   G.newMedal = !hasMedal();
@@ -3833,7 +3867,7 @@ function drawMedalScreen(){
   bigTitle('Golden Medal!', 330, 60);
   txt(G.newMedal ? 'It is in your Dressing Room under Medals.' : 'You already had one. Pip is wearing it.', mx, 372, 9, '#ffe9b0', 'center');
   txt('It looks great, but it does nothing.', mx, 394, 9, '#cbb8e6', 'center');
-  { const sl = saves[G.slot]; if (sl && sl.unlocked >= 4 && (G.frame >> 5) % 2 === 0) txt('New: World 2, Christmas, is open on the map!', VW/2, 418, 9, '#7ad0ff', 'center'); }
+  { const sl = saves[G.slot], nw = nextWorldLine(worldPos(0)); if (sl && (G.frame >> 5) % 2 === 0) txt(nw[0], VW/2, 418, 9, nw[1], 'center'); }
   txt('Score ' + String(G.score).padStart(7, '0') + '    High score ' + String(hi).padStart(7, '0'), VW/2, 444, 10, '#fff', 'center');
   if (G.timer > 60 && (G.frame >> 5) % 2 === 0) txt(hint('Press Enter to continue', 'Press A to continue', 'Tap to continue'), VW/2, 482, 11, '#fff', 'center');
   drawVignette();
@@ -3849,8 +3883,7 @@ const XM = () => SKIN() === 'xmas';
 const XMAS_BOSS = {gourd:['Frosty the Grump', 'FROSTY'], bonelord:['The Nutcracker King', 'NUTCRACKER KING'], phantom:['The Ice Queen', 'ICE QUEEN'], lord:['Grimhallow the Frost Lord', 'GRIMHALLOW']};
 function xmasBoss(b){
   const n = XMAS_BOSS[b.type]; if (!n) return;
-  b.name = n[0]; b.short = n[1];
-  const extra = b.type === 'lord' ? 4 : 2; b.hp += extra; b.maxHp += extra;   // world 2 bosses take a few more hits
+  b.name = n[0]; b.short = n[1];                                       // the extra hits come from worldBoss
 }
 function drawSnowfall(n, speed){
   const f = G.frame; ctx.fillStyle = '#ffffff';
@@ -4187,7 +4220,7 @@ function drawMapIconXmas(i, x, y){
   }
 }
 function drawXmasEnd(){
-  if (G.endWorld >= 2){ drawWorldEnd(G.endWorld); return; }
+  if (WORLD_STORY[G.endWorld].key !== 'xmas'){ drawWorldEnd(G.endWorld); return; }
   drawBg(7, G.frame*0.2);
   ctx.fillStyle = 'rgba(7,4,13,.4)'; ctx.fillRect(0, 0, VW, VH);
   drawSnowfall(lowFx ? 30 : 80, 1);
@@ -4198,7 +4231,7 @@ function drawXmasEnd(){
   ctx.fillStyle = '#e8f8ff'; ctx.fillText('Merry Christmas!', VW/2 + 90, 150); ctx.restore();
   txt('You and Pip saved Christmas!', VW/2 + 90, 224, 12, '#ffe9b0', 'center');
   txt(G.newSanta ? 'Pip got a Santa Hat! It is in the Dressing Room.' : 'Pip is wearing his Santa Hat again.', VW/2 + 90, 270, 9, '#e9dcff', 'center');
-  txt('New: World 3, Easter, is open on the map!', VW/2 + 90, 296, 9, WORLD_STORY[2].col, 'center');
+  { const nw = nextWorldLine(G.endWorld); txt(nw[0], VW/2 + 90, 296, 9, nw[1], 'center'); }
   txt('Score ' + String(G.score).padStart(7, '0') + '    High score ' + String(hi).padStart(7, '0'), VW/2 + 90, 344, 10, '#fff', 'center');
   if (G.timer > 60 && (G.frame >> 5) % 2 === 0) txt(hint('Press Enter to continue', 'Press A to continue', 'Tap to continue'), VW/2 + 90, 400, 11, '#fff', 'center');
   drawVignette();
@@ -4206,7 +4239,12 @@ function drawXmasEnd(){
 function awardSanta(){
   G.newSanta = !owns('hat', 'santa');
   PROF.owned['hat:santa'] = true; PROF.eq.hat = 'santa'; profSave();
-  syncToSlot(); G.mapSel = G.level; audio.sfx('oneup'); G.state = 'xmasend'; G.timer = 0; G.endWorld = 1;
+  syncToSlot(); G.mapSel = G.level; audio.sfx('oneup'); G.state = 'xmasend'; G.timer = 0; G.endWorld = G.level >> 2;
+}
+// the line under a world's end screen: the next world is open now, or everything is saved
+function nextWorldLine(w){
+  if (w + 1 < WORLD_STORY.length) return ['New: World ' + (w + 2) + ', ' + WORLD_STORY[w + 1].name + ', is open on the map!', WORLD_STORY[w + 1].col];
+  return ['You saved all four worlds! Play any world again from the map.', '#7cf06b'];
 }
 
 /* ---------------- WORLDS 2-4: new monsters, power-ups, looks and cutscenes ----------------
@@ -4220,20 +4258,21 @@ const WORLD_BOSS = {
   sea:{gourd:['King Crab', 'KING CRAB'], bonelord:['Captain Barnacle', 'CPT. BARNACLE'], phantom:['The Siren Queen', 'SIREN QUEEN'], lord:['Grimhallow the Deep Lord', 'GRIMHALLOW']}
 };
 function worldBoss(b, sk){
-  if (sk === 'xmas'){ xmasBoss(b); return; }
-  const n = WORLD_BOSS[sk] && WORLD_BOSS[sk][b.type]; if (!n) return;
-  b.name = n[0]; b.short = n[1];
-  const extra = (b.type === 'lord' ? 5 : 3) + (sk === 'sea' ? 1 : 0); b.hp += extra; b.maxHp += extra;   // later worlds: a few more hits
+  if (sk === 'xmas') xmasBoss(b);
+  else { const n = WORLD_BOSS[sk] && WORLD_BOSS[sk][b.type]; if (n){ b.name = n[0]; b.short = n[1]; } }
+  const extra = worldExtraHp(b); b.hp += extra; b.maxHp += extra;
 }
+// later worlds: bosses take a few more hits (world 1 none, then 2 / 3 / 4 more, Grimhallow 2 on top)
+const worldExtraHp = b => { const p = G.level >> 2; return p === 0 ? 0 : p + 1 + (b.type === 'lord' ? 2 : 0); };
 function awardWorld(w){
-  if (w === 1){ awardSanta(); return; }
+  if (WORLD_STORY[w].key === 'xmas'){ awardSanta(); return; }
   const WS = WORLD_STORY[w], slot = WS.prize[0], id = WS.prize[1];
   G.newPrize = !owns(slot, id);
   PROF.owned[slot + ':' + id] = true; PROF.eq[slot] = id; profSave();
   syncToSlot(); G.mapSel = G.level; audio.sfx('oneup'); G.state = 'xmasend'; G.timer = 0; G.endWorld = w;
 }
 function drawWorldEnd(w){
-  const WS = WORLD_STORY[w], th = w*4 + 3, mx = VW/2 + 90;
+  const WS = WORLD_STORY[w], th = GEN[w*4 + 3].theme, mx = VW/2 + 90;
   drawBg(th, G.frame*0.2);
   ctx.fillStyle = 'rgba(7,4,13,.4)'; ctx.fillRect(0, 0, VW, VH);
   drawSkinParticles(skinOf(th), 1);
@@ -4246,8 +4285,7 @@ function drawWorldEnd(w){
   ctx.fillStyle = '#ffffff'; ctx.fillText(WS.bigTitle, mx, 150); ctx.restore();
   txt(WS.line, mx, 224, 11, '#ffe9b0', 'center');
   txt(G.newPrize ? WS.prizeLine : 'Pip is wearing it again.', mx, 270, 9, '#e9dcff', 'center');
-  const more = w + 1 < WORLD_STORY.length;
-  txt(more ? 'New: World ' + (w + 2) + ', ' + WORLD_STORY[w + 1].name + ', is open on the map!' : 'Play any world again from the map.', mx, 296, 9, more ? WORLD_STORY[w + 1].col : '#cbb8e6', 'center');
+  { const nw = nextWorldLine(w); txt(nw[0], mx, 296, 9, nw[1], 'center'); }
   txt('Score ' + String(G.score).padStart(7, '0') + '    High score ' + String(hi).padStart(7, '0'), mx, 344, 10, '#fff', 'center');
   if (G.timer > 60 && (G.frame >> 5) % 2 === 0) txt(hint('Press Enter to continue', 'Press A to continue', 'Tap to continue'), mx, 400, 11, '#fff', 'center');
   drawVignette();
@@ -5122,7 +5160,7 @@ function stepWorldCutscene(){
 function drawWorldCutscene(){
   const c = G.wcs;
   if (!c){ ctx.fillStyle = '#07040d'; ctx.fillRect(0, 0, VW, VH); return; }
-  const w = c.w, WS = WORLD_STORY[w], th0 = w*4, sk = skinOf(th0), sc = WS.scenes[c.i], t = c.t, CW = WCS[sk], GY = WCS_GROUND, TH = THEMES[th0];
+  const w = c.w, WS = WORLD_STORY[w], th0 = GEN[w*4].theme, sk = skinOf(th0), sc = WS.scenes[c.i], t = c.t, CW = WCS[sk], GY = WCS_GROUND, TH = THEMES[th0];
   const PX = 700, PY = 120, TX = 470;
   ctx.save();
   let shake = 0;
@@ -6350,10 +6388,10 @@ function drawFiles(){
       ctx.restore();
       txt(HERO.name + ' - ' + HERO.tale, cx, FILE_Y + 139, 8, HERO.col, 'center');
       for (let k = 0; k < LEVELS.length; k++){
-        const done = sl.unlocked > k;
+        const done = lvDone(sl, k), ow = WORLD_ORDER[k >> 2];
         const dx = cx - ((LEVELS.length - 1)*12 + 3*6)/2 + k*12 + (k >> 2)*6;     // 4 little groups, one per world
-        ell(dx, FILE_Y + 160, 5, 5, done ? ['#e8761c', '#bfe8ff', '#ff9ac0', '#3ab8ff'][k >> 2] : 'rgba(255,255,255,.15)');
-        if (done && k < 4){ ctx.fillStyle = '#3d6b1f'; ctx.fillRect(dx - 1, FILE_Y + 153, 2, 3); }
+        ell(dx, FILE_Y + 160, 5, 5, done ? ['#e8761c', '#bfe8ff', '#ff9ac0', '#3ab8ff'][ow] : 'rgba(255,255,255,.15)');
+        if (done && ow === 0){ ctx.fillStyle = '#3d6b1f'; ctx.fillRect(dx - 1, FILE_Y + 153, 2, 3); }
       }
       txt('Score ' + String(sl.score).padStart(7, '0'), cx, FILE_Y + 182, 8, '#fff', 'center');
       txt('Lives x' + sl.lives + '   Candy x' + sl.candy, cx, FILE_Y + 202, 7, '#cbb8e6', 'center');
@@ -6411,6 +6449,7 @@ function drawMapIcon(i, x, y, locked){
     ctx.strokeStyle = '#777'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y - 6, 8, Math.PI, 0); ctx.stroke();
     return;
   }
+  i = GEN[i].theme;                                               // the icons are drawn by the level's old number
   if (i >= 8){ drawMapIconWorld(i, x, y); return; }
   if (i >= 4){ drawMapIconXmas(i, x, y); return; }
   if (i === 0){ ctx.save(); ctx.translate(x - 18, y - 18); ctx.scale(2, 2); drawMiniJack(0, 0); ctx.restore(); }
@@ -6430,43 +6469,45 @@ function drawMapIcon(i, x, y, locked){
 }
 function drawMap(){
   const sl = saves[G.slot]; if (!sl) return;
-  drawBg(G.mapSel, G.frame*0.2);
+  drawBg(GEN[G.mapSel].theme, G.frame*0.2);
   ctx.fillStyle = 'rgba(7,4,13,.35)'; ctx.fillRect(0, 0, VW, VH);
   // ground
-  ctx.fillStyle = THEMES[G.mapSel].mid; ctx.beginPath(); ctx.moveTo(0, VH);
+  ctx.fillStyle = THEMES[GEN[G.mapSel].theme].mid; ctx.beginPath(); ctx.moveTo(0, VH);
   for (let x = 0; x <= VW; x += 10) ctx.lineTo(x, 400 + Math.sin(x*0.01)*14);
   ctx.lineTo(VW, VH); ctx.fill();
   // path
   const wb = (G.mapSel >> 2) * 4, wn = wb >> 2, wcol = WORLD_STORY[wn].col;   // the map shows one world (4 levels) at a time
-  drawSkinParticles(skinOf(wb), 0.6);
+  drawSkinParticles(skinOf(GEN[wb].theme), 0.6);
   ctx.setLineDash([4, 10]); ctx.lineWidth = 4; ctx.lineCap = 'round';
   for (let k = 0; k < 3; k++){
     const i = wb + k;
-    ctx.strokeStyle = sl.unlocked > i ? wcol : 'rgba(255,255,255,.25)';
+    ctx.strokeStyle = lvDone(sl, i) ? wcol : 'rgba(255,255,255,.25)';
     ctx.beginPath(); ctx.moveTo(MAP_X[k], MAP_Y[k]);
     ctx.quadraticCurveTo((MAP_X[k] + MAP_X[k+1])/2, Math.min(MAP_Y[k], MAP_Y[k+1]) - 50, MAP_X[k+1], MAP_Y[k+1]); ctx.stroke();
   }
   ctx.setLineDash([]); ctx.lineCap = 'butt';
   const names = LEVEL_NAMES;
   for (let k = 0; k < 4; k++){
-    const i = wb + k, locked = i > sl.unlocked;
+    const i = wb + k, locked = !lvOpen(sl, i);
     drawMapIcon(i, MAP_X[k], MAP_Y[k], locked);
     txt(locked ? '???' : names[i], MAP_X[k], MAP_Y[k] + 50, 9, locked ? '#777' : '#e9dcff', 'center');
-    if (sl.unlocked > i){ ell(MAP_X[k] + 28, MAP_Y[k] - 28, 11, 11, '#3fae4a'); txt('✓', MAP_X[k] + 28, MAP_Y[k] - 34, 10, '#fff', 'center', 'system-ui, sans-serif'); }
+    if (lvDone(sl, i)){ ell(MAP_X[k] + 28, MAP_Y[k] - 28, 11, 11, '#3fae4a'); txt('✓', MAP_X[k] + 28, MAP_Y[k] - 34, 10, '#fff', 'center', 'system-ui, sans-serif'); }
   }
   // arrows to the other world
   const blink = (G.frame >> 5) % 2 === 0;
-  if (wb + 4 < LEVELS.length){                                     // next world
-    const open = sl.unlocked >= wb + 4;
+  const nx = worldStep(sl, wb, 1), pv = worldStep(sl, wb, -1);
+  if (wb + 4 < LEVELS.length){                                     // next world (a locked one in between is skipped)
+    const open = nx >= 0, nb = open ? (nx >> 2)*4 : wb + 4, nw = nb >> 2;
     panel(VW - 112, 62, 96, 96, open && blink);
-    if (open){ ctx.save(); ctx.translate(VW - 64, 104); ctx.scale(0.7, 0.7); drawMapIcon(wb + 7, 0, 0, false); ctx.restore(); txt('World ' + (wn + 2) + ' >', VW - 64, 136, 8, WORLD_STORY[wn + 1].col, 'center'); }
-    else { txt('World ' + (wn + 2), VW - 64, 76, 8, '#888', 'center'); txt('Beat', VW - 64, 100, 7, '#888', 'center'); txt('Grimhallow', VW - 64, 114, 7, '#888', 'center'); txt('to unlock', VW - 64, 128, 7, '#888', 'center'); }
+    if (open){ ctx.save(); ctx.translate(VW - 64, 104); ctx.scale(0.7, 0.7); drawMapIcon(nb + 3, 0, 0, false); ctx.restore(); txt('World ' + (nw + 1) + ' >', VW - 64, 136, 8, WORLD_STORY[nw].col, 'center'); }
+    else { txt('World ' + (nw + 1), VW - 64, 76, 8, '#888', 'center'); txt('Beat', VW - 64, 100, 7, '#888', 'center'); txt('Grimhallow', VW - 64, 114, 7, '#888', 'center'); txt('to unlock', VW - 64, 128, 7, '#888', 'center'); }
   }
-  if (wb > 0){                                                     // previous world
+  if (pv >= 0){                                                    // previous world
+    const pb = (pv >> 2)*4, pw = pb >> 2;
     panel(16, 62, 96, 96, false);
-    if (wn === 1){ ctx.save(); ctx.translate(64, 100); ctx.scale(1.4, 1.4); drawMiniJack(-9, -9); ctx.restore(); }
-    else { ctx.save(); ctx.translate(64, 104); ctx.scale(0.7, 0.7); drawMapIcon(wb - 1, 0, 0, false); ctx.restore(); }
-    txt('< World ' + wn, 64, 136, 8, WORLD_STORY[wn - 1].col, 'center');
+    if (WORLD_STORY[pw].key === 'pip'){ ctx.save(); ctx.translate(64, 100); ctx.scale(1.4, 1.4); drawMiniJack(-9, -9); ctx.restore(); }
+    else { ctx.save(); ctx.translate(64, 104); ctx.scale(0.7, 0.7); drawMapIcon(pb + 3, 0, 0, false); ctx.restore(); }
+    txt('< World ' + (pw + 1), 64, 136, 8, WORLD_STORY[pw].col, 'center');
   }
   // hero on selected node
   const hx = MAP_X[G.mapSel - wb], hy = MAP_Y[G.mapSel - wb] - 44 - Math.abs(Math.sin(G.frame*0.1))*6;
@@ -6478,7 +6519,7 @@ function drawMap(){
   txt('Score ' + String(sl.score).padStart(7, '0'), 300, 20, 10);
   drawCandyIcon(470, 24); txt('x' + String(sl.candy).padStart(2, '0'), 492, 20, 10);
   txt('Lives x' + sl.lives, 560, 20, 10);
-  if (sl.unlocked >= LEVELS.length) txt('All cleared!', 300, 38, 8, '#7cf06b');
+  if (allDone(sl)) txt('All cleared!', 300, 38, 8, '#7cf06b');
   bigTitle(names[G.mapSel], 110, 44);
   txt(WORLD_NAMES[G.mapSel >> 2], VW/2, 140, 9, wcol, 'center');
   // buttons
@@ -6539,7 +6580,7 @@ function drawIntro(){
   ctx.fillStyle = IC[1]; ctx.fillText(lvl.name, VW/2, 150);
   ctx.restore();
   const HC = HERO;
-  txt('WORLD ' + ((G.level >> 2) + 1) + '  -  CHAPTER ' + (G.level % 4 + 1) + ' OF 4  -  SAVE ' + (G.level >= 4 ? WORLD_STORY[G.level >> 2].save : 'HALLOWEEN') + ' WITH ' + HC.name.toUpperCase(), VW/2, 94, 10, HC.col, 'center');
+  txt('WORLD ' + ((G.level >> 2) + 1) + '  -  CHAPTER ' + (G.level % 4 + 1) + ' OF 4  -  SAVE ' + (WORLD_STORY[G.level >> 2].save || 'HALLOWEEN') + ' WITH ' + HC.name.toUpperCase(), VW/2, 94, 10, HC.col, 'center');
   drawPlayerAt(VW/2 - 60, 232, 1, G.powered, 0, true, 0, 1);
   txt('x  ' + G.lives, VW/2 - 10, 248, 16, '#fff', 'left');
   const storyLine = STORIES[0].levels[G.level];
@@ -6551,13 +6592,13 @@ function drawIntro(){
   if (G.timer > 30 && (G.frame >> 5) % 2 === 0) txt(hint('Enter: skip', 'A: skip', 'Tap: skip'), VW/2, 508, 8, '#cbb8e6', 'center');
   if (lvl.cpHit) txt('Continuing from the lantern', VW/2, 372, 10, '#ffb21f', 'center');
   if (lvl.seed != null) txt((lvl.fixed ? 'Classic level' : 'Random level  #' + (lvl.seed >>> 0).toString(36).toUpperCase()), VW/2, 474, 8, '#8f7bb0', 'center');
-  const tips = ['Stomp enemies, spin with the star. ? blocks hide power-ups!', 'Skeletons rebuild themselves. Magic finishes them for good.', 'Ghosts freeze when you look at them. Spiders only fear magic.', 'Dodge his attacks. When he tires, stomp him!',
+  const tips = byWorldOrder(['Stomp enemies, spin with the star. ? blocks hide power-ups!', 'Skeletons rebuild themselves. Magic finishes them for good.', 'Ghosts freeze when you look at them. Spiders only fear magic.', 'Dodge his attacks. When he tires, stomp him!',
     'Penguins slide at you on their bellies. Jump over them, then stomp!', 'Elves throw snowballs. Nutcrackers rebuild themselves.', 'The Snowflake Charm freezes every enemy. Touch them to shatter them!', 'Dodge his frost attacks. When he tires, stomp him!',
     'Bunnies hop at you. Painted eggs hide power-ups, like the Bunny Boots!', 'Snap flowers bite when open. Stomp them when they are closed!', 'Bees dive at you. Caterpillars only fear magic.', 'Dodge his attacks. When he tires, stomp him!',
-    'Pufferfish puff up when you come close. Stomp them while they are small!', 'Jellyfish sting! Spin or use magic. Pirates rebuild themselves.', 'The Bubble Helmet lets you swim: press jump in the air!', 'Dodge his attacks. When he tires, stomp him!'];
-  const w = G.level >> 2, WS = WORLD_STORY[w];
+    'Pufferfish puff up when you come close. Stomp them while they are small!', 'Jellyfish sting! Spin or use magic. Pirates rebuild themselves.', 'The Bubble Helmet lets you swim: press jump in the air!', 'Dodge his attacks. When he tires, stomp him!']);
+  const w = G.level >> 2, WS = WORLD_STORY[w], hw = WS.key === 'pip';
   txt(tips[G.level] || '', VW/2, 412, 10, '#cbb8e6', 'center');
-  txt(G.level === 3 ? 'The Night Lord waits at the top of the spire.' : G.level % 4 === 3 ? WS.lordLine : 'A guardian waits at the gate.', VW/2, 438, 10, w ? WS.col : '#ff8a1f', 'center');
+  txt(G.level % 4 === 3 ? (hw ? 'The Night Lord waits at the top of the spire.' : WS.lordLine) : 'A guardian waits at the gate.', VW/2, 438, 10, hw ? '#ff8a1f' : WS.col, 'center');
 }
 
 function drawEnd(title, sub, noPrompt){
