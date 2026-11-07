@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="google" content="notranslate">
-<title>Haunted Hollow</title>
-<meta name="description" content="Haunted Hollow - a Halloween and Christmas platformer. Play it on your phone, tablet or computer.">
+<title>Season Chaos</title>
+<meta name="description" content="Season Chaos - a Halloween and Christmas platformer. Play it on your phone, tablet or computer.">
 <meta name="theme-color" content="#1a0b2e">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Haunted Hollow">
+<meta name="apple-mobile-web-app-title" content="Season Chaos">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -23,6 +23,10 @@
 @font-face{font-family:'Press Start 2P';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/pressstart2p-latin-ext.woff2) format('woff2');unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 .tb #btnInstall{font-size:9px;background:rgba(255,138,31,.35);border-color:var(--accent)}
 .tb #btnInstall[hidden]{display:none}
+.tb #btnUpdate{font-size:9px;background:rgba(60,200,90,.45);border-color:#5f5;animation:updPulse 1.4s ease-in-out infinite}
+.tb #btnUpdate[hidden]{display:none}
+@keyframes updPulse{50%{box-shadow:0 0 10px 2px #5f5}}
+@media (prefers-reduced-motion: reduce){.tb #btnUpdate{animation:none}}
 :root{--bg:#07040d;--fg:#f3e9ff;--accent:#ff8a1f;--btn:rgba(40,16,60,.55);--btnBorder:rgba(255,138,31,.55);
   box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#07040d;--fg:#f3e9ff}}
@@ -167,10 +171,10 @@ body.champ .pad button.royal{display:flex}
 </style>
 </head>
 <body>
-<div id="rotate" role="alert"><div class="ph" aria-hidden="true"></div><div>Please turn your phone sideways.<br>Haunted Hollow plays in landscape.</div></div>
+<div id="rotate" role="alert"><div class="ph" aria-hidden="true"></div><div>Please turn your phone sideways.<br>Season Chaos plays in landscape.</div></div>
 <div id="wrap">
   <div id="toast" role="status" aria-live="polite"></div>
-  <canvas id="game" width="960" height="544" aria-label="Haunted Hollow game"></canvas>
+  <canvas id="game" width="960" height="544" aria-label="Season Chaos game"></canvas>
   <div class="tb">
     <button id="btnPause" aria-label="Pause party: pause the game">⏸️</button>
     <button id="btnMute" aria-label="Sound style: normal">🔊</button>
@@ -178,7 +182,8 @@ body.champ .pad button.royal{display:flex}
     <button id="btnAdmin" aria-label="Open admin panel">ADM</button>
     <button id="btnCheck" aria-label="Device check">?</button>
     <button id="btnFull" aria-label="Toggle fullscreen">FULL</button>
-    <button id="btnInstall" aria-label="Install Haunted Hollow as an app" hidden>INSTALL</button>
+    <button id="btnInstall" aria-label="Install Season Chaos as an app" hidden>INSTALL</button>
+    <button id="btnUpdate" aria-label="A new version is ready: tap to update" hidden>UPDATE</button>
   </div>
   <div id="admin" role="dialog" aria-label="Admin panel">
     <h2>Admin panel <button id="admClose" aria-label="Close admin panel">Close</button></h2>
@@ -208,7 +213,7 @@ body.champ .pad button.royal{display:flex}
   </div>
   <div id="acct" role="dialog" aria-modal="true" aria-labelledby="acTitle" class="open" data-mode="login">
     <div class="card">
-      <h2 id="acTitle">Haunted Hollow</h2>
+      <h2 id="acTitle">Season Chaos</h2>
       <p class="sub not-signed">Every account has its own save files and high score.</p>
       <div class="tabs not-signed" role="tablist">
         <button type="button" id="acTabIn" role="tab" aria-selected="true">Log in</button>
@@ -1566,7 +1571,7 @@ const acTabIn = document.getElementById('acTabIn'), acTabNew = document.getEleme
 function acMsg(t, ok){ acMsgEl.textContent = t || ''; acMsgEl.classList.toggle('ok', !!ok); }
 function acSetMode(m){
   acEl.dataset.mode = m; UI.mode = m;
-  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Haunted Hollow';
+  document.getElementById('acTitle').textContent = {board:'Leaderboard', wardrobe:'Dressing Room', menu:'Menu', news:'Leaderboard News', forgot:'Forgot password'}[m] || 'Season Chaos';
   acTabIn.setAttribute('aria-selected', String(m === 'login')); acTabNew.setAttribute('aria-selected', String(m === 'create'));
   acGo.textContent = m === 'create' ? 'Create account' : 'Log in';
   acPass.setAttribute('autocomplete', m === 'create' ? 'new-password' : 'current-password');
@@ -6286,8 +6291,8 @@ function drawTitle(){
   ctx.save();
   ctx.shadowColor = '#ff6a00'; ctx.shadowBlur = 30;
   ctx.font = '110px ' + SPOOK; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#2a0a00'; ctx.fillText('Haunted Hollow', VW/2 + 4, 138 + wob + 4);
-  ctx.fillStyle = '#ff8a1f'; ctx.fillText('Haunted Hollow', VW/2, 138 + wob);
+  ctx.fillStyle = '#2a0a00'; ctx.fillText('Season Chaos', VW/2 + 4, 138 + wob + 4);
+  ctx.fillStyle = '#ff8a1f'; ctx.fillText('Season Chaos', VW/2, 138 + wob);
   ctx.restore();
   txt('A Halloween platformer', VW/2, 205, 14, '#e9dcff', 'center');
   { const ce = PRIZE.crown && board.find(x => x.id === PRIZE.crown);       // who wears the crown right now
@@ -6698,7 +6703,7 @@ if (window.__HH_TEST) window.__HH = {rollQuestReward, giveReward, kbKeys, DEVICE
   let prompt = null;
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); prompt = e; if (!installed()) btn.hidden = false; });
-  addEventListener('appinstalled', () => { btn.hidden = true; prompt = null; say('Haunted Hollow is on your home screen now!'); });
+  addEventListener('appinstalled', () => { btn.hidden = true; prompt = null; say('Season Chaos is on your home screen now!'); });
   btn.addEventListener('click', async () => {
     btn.blur();
     if (!prompt){ say(ios ? 'Tap Share, then "Add to Home Screen".' : 'Use your browser menu: "Add to Home Screen".'); return; }
@@ -6706,12 +6711,27 @@ if (window.__HH_TEST) window.__HH = {rollQuestReward, giveReward, kbKeys, DEVICE
   });
   if (ios && !installed()) btn.hidden = false;
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    /* UPDATE button: shows as soon as a new version has been downloaded and stays until it is installed */
+    const upd = document.getElementById('btnUpdate');
+    let waiting = null, reloading = false;
+    const offer = w => { if (!w || !navigator.serviceWorker.controller) return; waiting = w; upd.hidden = false; };
+    upd.addEventListener('click', () => {
+      upd.blur();
+      if (!waiting){ location.reload(); return; }
+      upd.textContent = '...'; say('Updating...');
+      waiting.postMessage('update');
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading) return; reloading = true; location.reload(); });
     addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then(reg => {
+        offer(reg.waiting);                                         // already downloaded earlier but not installed yet
         reg.addEventListener('updatefound', () => {
           const w = reg.installing; if (!w) return;
-          w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) say('A new version is ready. Restart the game to get it.'); });
+          w.addEventListener('statechange', () => { if (w.state === 'installed') { offer(w); say('A new version is ready! Tap UPDATE.'); } });
         });
+        const check = () => { reg.update().catch(() => {}); };   // keep looking for new versions while playing
+        setInterval(check, 15 * 60 * 1000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
       }).catch(() => {});
     });
   }

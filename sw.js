@@ -1,49 +1,22 @@
-/* Haunted Hollow service worker: caches the game for offline play and makes app updates actionable. */
-const VERSION = 'hh-app-v4';
-const FILES = ['./', './index.html', './manifest.webmanifest', './update-ui.js',
+/* Season Chaos service worker: keeps the game on the device so it starts fast and plays offline.
+   The game page itself is loaded fresh from the internet when possible, so updates arrive by themselves. */
+const VERSION = 'hh-app-v5';
+const FILES = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
   './fonts/creepster.woff2', './fonts/pressstart2p-latin.woff2', './fonts/pressstart2p-latin-ext.woff2'];
-
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(FILES)));
-  // Activate updates immediately; the page reloads when the new worker takes control.
-  self.skipWaiting();
+// A new version waits until the player taps UPDATE in the game (the button stays until then).
+self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); });
+self.addEventListener('message', e => { if (e.data === 'update' || (e.data && e.data.type === 'SKIP_WAITING')) self.skipWaiting(); });
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-
-self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(key => key !== VERSION).map(key => caches.delete(key))))
-    .then(() => self.clients.claim()));
-});
-
-self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
-});
-
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
-
-  if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then(async response => {
-      if (!response.ok || !/text\/html/i.test(response.headers.get('content-type') || '')) return response;
-      const html = await response.text();
-      const injected = html.replace(/<\/body\s*>/i, '<script src="./update-ui.js" defer><\/script></body>');
-      const headers = new Headers(response.headers);
-      headers.delete('content-length');
-      headers.delete('content-encoding');
-      const updatedResponse = new Response(injected, {status: response.status, statusText: response.statusText, headers});
-      caches.open(VERSION).then(cache => cache.put('./index.html', updatedResponse.clone()));
-      return updatedResponse;
-    }).catch(() => caches.match('./index.html')));
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  if (req.mode === 'navigate'){                       // the game page: newest version first, saved copy when offline
+    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); return res; })
+      .catch(() => caches.match('./index.html')));
     return;
   }
-
-  event.respondWith(caches.match(request).then(hit => hit || fetch(request).then(response => {
-    if (response.ok) {
-      const copy = response.clone();
-      caches.open(VERSION).then(cache => cache.put(request, copy));
-    }
-    return response;
-  })));
+  e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { if (res.ok){ const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return res; })));
 });
