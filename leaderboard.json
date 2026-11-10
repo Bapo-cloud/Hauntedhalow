@@ -1,4 +1,17 @@
 {
  "v": 1,
- "players": {}
+ "players": {
+  "1e6fb356db823247": {
+   "name": "NKRUU",
+   "score": 19640,
+   "skin": {
+    "hat": "champ",
+    "face": "",
+    "back": "",
+    "neck": "",
+    "color": "teal"
+   },
+   "t": 1794313235517
+  }
+ }
 }
