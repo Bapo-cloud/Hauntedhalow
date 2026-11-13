@@ -17,11 +17,11 @@
    "name": "NKRUU",
    "score": 20100,
    "skin": {
-    "hat": "",
-    "face": "shades",
-    "back": "cape",
+    "hat": "pirate",
+    "face": "mask",
+    "back": "wings",
     "neck": "",
-    "color": "crimson"
+    "color": "ocean"
    },
    "t": 1794578673828
   }
