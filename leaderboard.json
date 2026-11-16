@@ -1,29 +1,4 @@
 {
  "v": 1,
- "players": {
-  "1e6fb356db823247": {
-   "name": "NKRUU",
-   "score": 46217,
-   "skin": {
-    "hat": "champ",
-    "face": "shades",
-    "back": "cape",
-    "neck": "",
-    "color": "crimson"
-   },
-   "t": 1794313821466
-  },
-  "5badd0dc04af2d65": {
-   "name": "NKRUU",
-   "score": 27610,
-   "skin": {
-    "hat": "pirate",
-    "face": "mask",
-    "back": "wings",
-    "neck": "",
-    "color": "ocean"
-   },
-   "t": 1794578842093
-  }
- }
+ "players": {}
 }
