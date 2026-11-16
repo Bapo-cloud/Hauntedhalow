@@ -1459,9 +1459,18 @@ function boardRank(){ const i = board.findIndex(e => e.id === ME()); return i < 
 
 /* the online part: scores wait in an outbox (also across restarts) until the server has them */
 const BOARD_URL = 'https://season-chaos-leaderboard.onrender.com', OUT_KEY = 'hh_board_out_v1';
-const NET = {out:{}, busy:false, ok:false, tried:false, timer:0};
+const DEL_KEY = 'hh_board_del_v1';                                 // keys of deleted save files the server still has to forget
+const NET = {out:{}, del:{}, busy:false, ok:false, tried:false, timer:0};
 try { const o = JSON.parse(localStorage.getItem(OUT_KEY) || '{}'); if (o && typeof o === 'object') NET.out = o; } catch(e){}
-const netKeep = () => { try { localStorage.setItem(OUT_KEY, JSON.stringify(NET.out)); } catch(e){} };
+try { const o = JSON.parse(localStorage.getItem(DEL_KEY) || '{}'); if (o && typeof o === 'object') NET.del = o; } catch(e){}
+const netKeep = () => { try { localStorage.setItem(OUT_KEY, JSON.stringify(NET.out)); localStorage.setItem(DEL_KEY, JSON.stringify(NET.del)); } catch(e){} };
+function boardForget(sl){                                             // a save file was deleted: its row, its crown and its prizes go too
+  const id = slotPub(sl); if (!id) return;
+  delete NET.out[id]; NET.del[id] = sl.key; netKeep();
+  board = board.filter(e => e.id !== id); boardSave();
+  delete PRIZE.paid[id]; delete PRIZE.owed[id]; delete PRIZE.news[id]; prizeSave();
+  prizeReconcile(); netSoon(500);
+}
 function netQueue(sl, score){
   const id = slotPub(sl); if (!id || !(score > 0)) return;
   const o = NET.out[id];
@@ -1473,6 +1482,13 @@ async function netSync(){
   if (NET.busy) return; NET.busy = true;
   try {
     let got = false;
+    for (const [id, key] of Object.entries(NET.del)){
+      const r = await fetch(BOARD_URL + '/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key})});
+      if (r.status === 404) continue;                                    // older server without /remove: keep it for later
+      if (!r.ok && r.status !== 400) throw new Error('remove ' + r.status);
+      delete NET.del[id]; netKeep();
+      if (r.ok){ netApply(await r.json()); got = true; }
+    }
     for (const [id, o] of Object.entries(NET.out)){
       const r = await fetch(BOARD_URL + '/score', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(o)});
       if (!r.ok && r.status !== 400) throw new Error('score ' + r.status);
@@ -1486,7 +1502,7 @@ async function netSync(){
 }
 function netApply(j){
   if (!j || !Array.isArray(j.players)) return;
-  const fresh = j.players.filter(p => p && /^[a-f0-9]{16}$/.test(p.id)).map(p => ({id:p.id, acct:String(p.name || '').slice(0, 10), score:Math.floor(Number(p.score)) || 0, skin:cleanLook(p.skin), t:Number(p.t) || 0}));
+  const fresh = j.players.filter(p => p && /^[a-f0-9]{16}$/.test(p.id) && !NET.del[p.id]).map(p => ({id:p.id, acct:String(p.name || '').slice(0, 10), score:Math.floor(Number(p.score)) || 0, skin:cleanLook(p.skin), t:Number(p.t) || 0}));
   for (const [id, o] of Object.entries(NET.out)){                      // own scores that are not sent yet stay on the list
     const e = fresh.find(x => x.id === id);
     if (e){ if (o.score > e.score) e.score = o.score; } else fresh.push({id, acct:o.name, score:o.score, skin:cleanLook(o.skin), t:Date.now()});
@@ -2013,7 +2029,7 @@ function stepFiles(){
   if (G.confirmDel >= 0){
     let yes = (pressed.start || pressed.jump) && !pressed.tap, no = pressed.pause;
     if (pressed.tap){ const t = pressed.tap; if (t.y > 290 && t.y < 350){ if (Math.abs(t.x - (VW/2 - 90)) < 70) yes = true; else if (Math.abs(t.x - (VW/2 + 90)) < 70) no = true; } }
-    if (yes){ saves[G.confirmDel] = null; persist(); audio.sfx('break'); G.confirmDel = -1; }
+    if (yes){ const gone = saves[G.confirmDel]; saves[G.confirmDel] = null; persist(); boardForget(gone); audio.sfx('break'); G.confirmDel = -1; }
     else if (no){ G.confirmDel = -1; audio.sfx('bump'); }
     return;
   }

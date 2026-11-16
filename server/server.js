@@ -5,6 +5,7 @@
 
    GET  /top        -> {players:[{id, name, score, skin, t}]}   the best 100
    POST /score      <- {key, name, score, skin}                 keeps the higher score
+   POST /remove     <- {key}                                    a deleted save file leaves the list
    POST /redeem     <- {code}  -> {code, reward:{candy, skill, levels, items, lives}}   gift codes from codes.json (same branch)
    Environment: GITHUB_TOKEN (contents read/write on the repo), GITHUB_REPO, DATA_BRANCH, DATA_PATH, ALLOWED_ORIGINS, PORT */
 'use strict';
@@ -43,6 +44,7 @@ function nameCheck(raw){                                   // returns null when 
 
 /* ---- the list ---- */
 let players = {};                    // id -> {name, score, skin, t}
+const removed = new Set();          // ids deleted since the server started: a merge must not bring them back
 let sha = '', loaded = false, dirty = false, saving = false, saveTimer = null;
 
 const gh = (path, opt = {}) => fetch('https://api.github.com/repos/' + REPO + path, Object.assign({}, opt, {
@@ -91,6 +93,7 @@ async function save(){
     if (r.status === 409 || r.status === 422){                 // the file changed meanwhile: merge with it and try again
       const mine = players; await load();
       for (const [id, p] of Object.entries(mine)) if (!players[id] || players[id].score < p.score) players[id] = p;
+      for (const id of removed) delete players[id];
       dirty = true; scheduleSave(); return;
     }
     if (!r.ok) throw new Error('save ' + r.status + ' ' + (await r.text()).slice(0, 200));
@@ -163,9 +166,21 @@ const server = http.createServer(async (req, res) => {
       if (!/^[A-Z0-9 ]{1,10}$/.test(name) || nameCheck(name)) return send(res, 400, {error:'Bad name'}, origin);
       if (!(score > 0 && score <= MAX_SCORE)) return send(res, 400, {error:'Bad score'}, origin);
       const id = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16), p = players[id], skin = cleanSkin(b.skin);
+      removed.delete(id);
       if (!p || score > p.score){ players[id] = {name, score, skin, t:Date.now()}; scheduleSave(); }
       else if (p.name !== name || JSON.stringify(p.skin) !== JSON.stringify(skin)){ p.name = name; p.skin = skin; scheduleSave(); }
       return send(res, 200, Object.assign({id}, top()), origin);
+    }
+    if (req.method === 'POST' && url.pathname === '/remove'){
+      let raw = '';
+      for await (const c of req){ raw += c; if (raw.length > 500) return send(res, 413, {error:'Too big'}, origin); }
+      let b; try { b = JSON.parse(raw); } catch(e){ return send(res, 400, {error:'Bad JSON'}, origin); }
+      const key = String(b.key || '');
+      if (!/^[a-f0-9]{32,64}$/.test(key)) return send(res, 400, {error:'Bad key'}, origin);
+      const id = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
+      removed.add(id);
+      if (players[id]){ delete players[id]; scheduleSave(); }
+      return send(res, 200, top(), origin);
     }
     if (req.method === 'POST' && url.pathname === '/redeem'){
       let raw = '';
